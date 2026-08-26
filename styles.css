@@ -1812,7 +1812,7 @@ input:focus-visible {
 
 .flashcard-face p {
   margin: 0;
-  font-family: 'Caveat', cursive;
+  font-family: 'Patrick Hand', cursive;
   font-size: clamp(21px, 2.8vw, 28px);
   line-height: 1.35;
   color: var(--ink);
