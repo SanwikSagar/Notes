@@ -567,7 +567,6 @@ function jitterAngle(id, tone) {
 }
 
 function stickyHTML(sticky) {
-  const delBtn = `<button class="sticky-delete" data-id="${sticky.id}" aria-label="Delete note">×</button>`;
   const resizeHandle = `<span class="resize-handle" data-resize="${sticky.id}"></span>`;
   const widthStyle = sticky.width ? `--w:${sticky.width}px; ` : '';
   const rotStyle = sticky.image ? '' : `--rot:${jitterAngle(sticky.id, sticky.tone)}deg; `;
@@ -575,7 +574,6 @@ function stickyHTML(sticky) {
   if (sticky.image) {
     return `
       <article class="sticky sticky-image sticky-loose" data-id="${sticky.id}" style="${widthStyle}--x:${sticky.x}%; --y:${sticky.y}%">
-        ${delBtn}
         <img src="${sticky.image}" alt="${sticky.title || 'Image note'}" draggable="false">
         ${resizeHandle}
       </article>
@@ -585,7 +583,6 @@ function stickyHTML(sticky) {
   if (sticky.checklist) {
     return `
       <article class="sticky sticky-${sticky.tone} sticky-loose" data-id="${sticky.id}" style="${widthStyle}${rotStyle}--x:${sticky.x}%; --y:${sticky.y}%">
-        ${delBtn}
         <p class="sticky-title" contenteditable="true" data-sticky-title="${sticky.id}">${sticky.title}</p>
         <ul class="checklist">
           ${sticky.checklist.map((text, i) => `
@@ -606,7 +603,6 @@ function stickyHTML(sticky) {
   if (sticky.list) {
     return `
       <article class="sticky sticky-${sticky.tone} sticky-loose" data-id="${sticky.id}" style="${widthStyle}${rotStyle}--x:${sticky.x}%; --y:${sticky.y}%">
-        ${delBtn}
         <p class="sticky-title" contenteditable="true" data-sticky-title="${sticky.id}">${sticky.title}</p>
         <ul>
           ${sticky.list.map((text, i) => `
@@ -622,7 +618,6 @@ function stickyHTML(sticky) {
   }
   return `
     <article class="sticky sticky-${sticky.tone} sticky-loose" data-id="${sticky.id}" style="${widthStyle}${rotStyle}--x:${sticky.x}%; --y:${sticky.y}%">
-      ${delBtn}
       <p class="sticky-title" contenteditable="true" data-sticky-title="${sticky.id}">${sticky.title}</p>
       <p contenteditable="true" data-sticky-text="${sticky.id}">${sticky.text}</p>
       ${resizeHandle}
@@ -944,17 +939,19 @@ function wireToolbarScaling() {
 
 /* ---------- Sticky notes ---------- */
 
+function trashZoneEl() {
+  return document.querySelector('#trashZone');
+}
+
+function isOverTrash(clientX, clientY) {
+  const trash = trashZoneEl();
+  if (!trash) return false;
+  const rect = trash.getBoundingClientRect();
+  return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+}
+
 function wireStickyInteractions() {
   const page = document.querySelector('#notebookPage');
-
-  page.querySelectorAll('.sticky-delete').forEach((btn) => {
-    btn.addEventListener('click', (event) => {
-      event.stopPropagation();
-      const id = btn.dataset.id;
-      currentPage().stickies = (currentPage().stickies || []).filter((s) => s.id !== id);
-      renderPageContent();
-    });
-  });
 
   page.querySelectorAll('.sticky-loose').forEach((sticky) => {
     let dragging = false;
@@ -969,6 +966,7 @@ function wireStickyInteractions() {
       offsetX = event.clientX - rect.left - (parseFloat(sticky.style.getPropertyValue('--x')) / 100) * rect.width;
       offsetY = event.clientY - rect.top - (parseFloat(sticky.style.getPropertyValue('--y')) / 100) * rect.height;
       sticky.classList.add('is-dragging');
+      trashZoneEl() && trashZoneEl().classList.add('is-visible');
     });
 
     sticky.addEventListener('pointermove', (event) => {
@@ -981,11 +979,25 @@ function wireStickyInteractions() {
       yPct = Math.max(-8, Math.min(96, yPct));
       sticky.style.setProperty('--x', `${xPct}%`);
       sticky.style.setProperty('--y', `${yPct}%`);
+      const trash = trashZoneEl();
+      if (trash) trash.classList.toggle('is-target', isOverTrash(event.clientX, event.clientY));
     });
 
-    sticky.addEventListener('pointerup', () => {
+    const endDrag = (event) => {
+      if (!dragging) return;
       dragging = false;
       sticky.classList.remove('is-dragging');
+      const trash = trashZoneEl();
+      const droppedOnTrash = trash && trash.classList.contains('is-target');
+      if (trash) { trash.classList.remove('is-visible', 'is-target'); }
+
+      if (droppedOnTrash) {
+        const id = sticky.dataset.id;
+        currentPage().stickies = (currentPage().stickies || []).filter((s) => s.id !== id);
+        renderPageContent();
+        return;
+      }
+
       const id = sticky.dataset.id;
       const data = (currentPage().stickies || []).find((s) => s.id === id);
       if (data) {
@@ -993,7 +1005,10 @@ function wireStickyInteractions() {
         data.y = parseFloat(sticky.style.getPropertyValue('--y'));
       }
       scheduleSave();
-    });
+    };
+
+    sticky.addEventListener('pointerup', endDrag);
+    sticky.addEventListener('pointercancel', endDrag);
   });
 
   wireStickyResize();
@@ -1023,13 +1038,16 @@ function wireStickyResize() {
       sticky.style.setProperty('--w', `${width}px`);
     });
 
-    handle.addEventListener('pointerup', () => {
+    const endResize = () => {
       if (!resizing) return;
       resizing = false;
       const data = (currentPage().stickies || []).find((s) => s.id === handle.dataset.resize);
       if (data) data.width = parseFloat(sticky.style.getPropertyValue('--w'));
       scheduleSave();
-    });
+    };
+
+    handle.addEventListener('pointerup', endResize);
+    handle.addEventListener('pointercancel', endResize);
   });
 }
 
@@ -1376,13 +1394,19 @@ function saveCanvasSnapshot() {
   if (pageKey) state.drawings[pageKey] = canvas.toDataURL();
 }
 
+const TOOL_LABELS = { none: 'Select', pen: 'Pen', highlighter: 'Highlighter', eraser: 'Eraser', sticky: 'Sticky' };
+
 function wireDrawingTools() {
-  const tools = document.querySelectorAll('.tool-btn');
+  // Scoped to buttons with data-tool only — brushOptionsBtn/pageBgBtn share
+  // the .tool-btn style but open popovers, they aren't drawing tools.
+  const tools = document.querySelectorAll('.tool-btn[data-tool]');
+  const label = document.querySelector('#toolActiveLabel');
   tools.forEach((tool) => {
     tool.addEventListener('click', () => {
       tools.forEach((item) => item.classList.remove('is-active'));
       tool.classList.add('is-active');
       state.tool = tool.dataset.tool;
+      if (label) label.textContent = TOOL_LABELS[state.tool] || state.tool;
       updateCanvasPointerEvents();
 
       if (state.tool === 'sticky') {
@@ -1714,11 +1738,13 @@ function wireMindmapInteractions() {
       updateMindmapLines();
     });
 
-    node.addEventListener('pointerup', () => {
+    const endDrag = () => {
       dragging = false;
       node.classList.remove('is-dragging');
       scheduleSave();
-    });
+    };
+    node.addEventListener('pointerup', endDrag);
+    node.addEventListener('pointercancel', endDrag);
   });
 }
 

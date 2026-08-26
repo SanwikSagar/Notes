@@ -187,14 +187,8 @@
                 <div class="spiral" aria-hidden="true"></div>
               </div>
             </div>
-          </div>
 
-          <div class="canvas-toolbar">
-            <div class="canvas-toolbar-scroll">
-            <button class="avatar" aria-label="Your profile">AR</button>
-            <span class="toolbar-divider"></span>
-
-            <div class="tool-group">
+            <div class="tools-rail" id="toolsRail">
               <button class="tool-btn is-active" data-tool="none" title="Select / move">
                 <svg viewBox="0 0 24 24"><path d="M5 3l6 16 2-6 6-2z"/></svg>
               </button>
@@ -208,10 +202,10 @@
                 <svg viewBox="0 0 24 24"><path d="M4 15l8-8 7 7-6 6H8z"/><line x1="6" y1="20" x2="20" y2="20"/></svg>
               </button>
               <div class="menu-wrap">
-                <button class="tool-btn" id="brushOptionsBtn" aria-haspopup="true" title="Brush color &amp; size">
+                <button class="tool-btn" id="brushOptionsBtn" aria-haspopup="true" title="Pen color &amp; thickness">
                   <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="8" r="1.3" fill="currentColor" stroke="none"/><circle cx="8.5" cy="13" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="13" r="1.3" fill="currentColor" stroke="none"/></svg>
                 </button>
-                <div class="dropdown-menu brush-menu" id="brushOptionsMenu" hidden>
+                <div class="dropdown-menu brush-menu rail-menu" id="brushOptionsMenu" hidden>
                   <p class="brush-menu-label">Pen color</p>
                   <div class="swatch-row">
                     <button class="swatch is-active" data-color="#3a3327" style="--sw:#3a3327" aria-label="Ink"></button>
@@ -220,15 +214,13 @@
                     <button class="swatch" data-color="#5a9d6f" style="--sw:#5a9d6f" aria-label="Green"></button>
                     <button class="swatch" data-color="#d9822f" style="--sw:#d9822f" aria-label="Amber"></button>
                   </div>
-                  <p class="brush-menu-label">Pen size</p>
+                  <p class="brush-menu-label">Pen thickness</p>
                   <input type="range" id="penWidthRange" min="1" max="10" value="2.4" step="0.2">
                 </div>
               </div>
-            </div>
 
-            <span class="toolbar-divider"></span>
+              <span class="toolbar-divider-h"></span>
 
-            <div class="tool-group">
               <button class="tool-btn" data-tool="sticky" title="Quick sticky note (tap page to place)">
                 <svg viewBox="0 0 24 24"><path d="M5 4h14v10l-5 6H5z"/><path d="M14 20v-6h5"/></svg>
               </button>
@@ -236,50 +228,56 @@
                 <button class="tool-btn" id="pageBgBtn" aria-haspopup="true" title="Page background">
                   <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/></svg>
                 </button>
-                <div class="dropdown-menu bg-menu" id="pageBgMenu" hidden>
+                <div class="dropdown-menu bg-menu rail-menu" id="pageBgMenu" hidden>
                   <p class="brush-menu-label">Page background</p>
                   <button data-bg="ruled" class="is-active">Ruled lines</button>
                   <button data-bg="grid">Grid</button>
                   <button data-bg="blank">Blank</button>
                 </div>
               </div>
-            </div>
 
-            <span class="toolbar-divider"></span>
+              <span class="toolbar-divider-h"></span>
 
-            <div class="tool-group">
-              <button class="icon-btn" id="undoButton" aria-label="Undo">
-                <svg viewBox="0 0 24 24"><path d="M7 8H3V4"/><path d="M3 8c3-4 8-5 12-2a8 8 0 1 1-3 14"/></svg>
+              <button class="icon-btn" id="undoButton" aria-label="Undo" title="Undo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
               </button>
-              <button class="icon-btn" id="redoButton" aria-label="Redo">
-                <svg viewBox="0 0 24 24"><path d="M17 8h4V4"/><path d="M21 8c-3-4-8-5-12-2a8 8 0 1 0 3 14"/></svg>
+              <button class="icon-btn" id="redoButton" aria-label="Redo" title="Redo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg>
               </button>
-              <button class="icon-btn" id="clearDrawingButton" aria-label="Clear drawing">
+              <button class="icon-btn" id="clearDrawingButton" aria-label="Clear drawing" title="Clear drawing">
                 <svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/></svg>
               </button>
-            </div>
+
+              <span class="tool-active-label" id="toolActiveLabel">Select</span>
             </div>
 
-            <div class="canvas-toolbar-fixed">
-              <button class="icon-btn" id="soundToggleBtn" aria-label="Mute sounds" aria-pressed="false" title="Toggle writing &amp; page-turn sounds">
-                <svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 5V4L8 9z"/><path d="M16 8a5 5 0 0 1 0 8"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
-              </button>
-              <div class="page-nav" id="pageNav">
-                <button class="page-nav-btn" id="prevPageBtn" aria-label="Previous page">‹</button>
-                <div class="page-dots" id="pageDots"></div>
-                <button class="page-nav-btn" id="nextPageBtn" aria-label="Next page">›</button>
+            <div class="trash-zone" id="trashZone" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/></svg>
+              <span>Drop to delete</span>
+            </div>
+          </div>
+
+          <div class="canvas-toolbar">
+            <button class="avatar" aria-label="Your profile">AR</button>
+            <button class="icon-btn" id="soundToggleBtn" aria-label="Mute sounds" aria-pressed="false" title="Toggle writing &amp; page-turn sounds">
+              <svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 5V4L8 9z"/><path d="M16 8a5 5 0 0 1 0 8"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+            </button>
+            <div class="toolbar-spacer"></div>
+            <div class="page-nav" id="pageNav">
+              <button class="page-nav-btn" id="prevPageBtn" aria-label="Previous page">‹</button>
+              <div class="page-dots" id="pageDots"></div>
+              <button class="page-nav-btn" id="nextPageBtn" aria-label="Next page">›</button>
+            </div>
+            <div class="add-menu-wrap">
+              <button class="add-btn" id="addNoteButton" aria-haspopup="true" aria-label="Add to page">+</button>
+              <div class="dropdown-menu add-menu" id="addMenu" hidden>
+                <button data-add-type="sticky">🗒️ Sticky note</button>
+                <button data-add-type="list">📋 List</button>
+                <button data-add-type="checklist">☑️ Checklist</button>
+                <button data-add-type="text">📝 Text note</button>
+                <button data-add-type="image">🖼️ Image</button>
               </div>
-              <div class="add-menu-wrap">
-                <button class="add-btn" id="addNoteButton" aria-haspopup="true" aria-label="Add to page">+</button>
-                <div class="dropdown-menu add-menu" id="addMenu" hidden>
-                  <button data-add-type="sticky">🗒️ Sticky note</button>
-                  <button data-add-type="list">📋 List</button>
-                  <button data-add-type="checklist">☑️ Checklist</button>
-                  <button data-add-type="text">📝 Text note</button>
-                  <button data-add-type="image">🖼️ Image</button>
-                </div>
-                <input type="file" id="imageFileInput" accept="image/*" hidden>
-              </div>
+              <input type="file" id="imageFileInput" accept="image/*" hidden>
             </div>
           </div>
         </div>
