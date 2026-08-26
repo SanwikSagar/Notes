@@ -719,6 +719,13 @@ svg {
   background: rgba(179, 69, 79, 0.1);
 }
 
+/* No hover on touch — keep delete always reachable instead of hidden. */
+@media (hover: none), (pointer: coarse) {
+  .nb-delete-btn {
+    opacity: 0.7;
+  }
+}
+
 .nb-empty {
   color: var(--muted);
   font-size: 12.5px;
@@ -873,6 +880,14 @@ svg {
   display: flex;
 }
 
+/* No hover on touch — page rename/delete must stay visible always. */
+@media (hover: none), (pointer: coarse) {
+  .page-tab-delete,
+  .page-tab-rename {
+    display: flex;
+  }
+}
+
 .page-tab-delete:hover {
   color: #b3454f;
   border-color: #e39aa8;
@@ -907,13 +922,102 @@ svg {
   flex: 1;
   min-height: 0;
   perspective: 1600px;
-  padding: 16px;
+  padding: 16px 76px 16px 16px;
   display: flex;
   /* margin:auto on the page (below) centers it when it fits and remains
      fully reachable by scrolling when it doesn't — unlike centering via
      justify/align-items, which can clip the far edge of an overflowing
      child in some browsers. */
   overflow: auto;
+  position: relative;
+}
+
+/* Vertical tool rail — sits fixed to the right of the page so pen/eraser/
+   etc. are always one tap away without scrolling; only page navigation
+   and adding elements live in the bottom bar. */
+.tools-rail {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  padding: 10px 6px;
+  box-shadow: 0 10px 24px rgba(58, 51, 39, 0.14);
+  max-height: calc(100% - 24px);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.tools-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.toolbar-divider-h {
+  width: 22px;
+  height: 1px;
+  background: var(--line);
+  margin: 2px 0;
+  flex-shrink: 0;
+}
+
+.tool-active-label {
+  margin-top: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: center;
+  max-width: 46px;
+}
+
+/* Drop zone for deleting stickies/notes — fixed to the viewport (not the
+   page-flip-stage) so its position is reliable regardless of page layout;
+   hidden until a drag starts, then appears bottom-right, reachable by thumb. */
+.trash-zone {
+  position: fixed;
+  right: 16px;
+  bottom: 84px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 50px;
+  height: 50px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--paper);
+  border: 2px dashed #b3454f;
+  color: #b3454f;
+  cursor: default;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.85);
+  transition: opacity 0.15s ease, transform 0.15s ease, background 0.15s ease;
+  box-shadow: 0 10px 24px rgba(58, 51, 39, 0.18);
+}
+
+.trash-zone svg {
+  width: 22px;
+  height: 22px;
+}
+
+.trash-zone.is-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.trash-zone.is-target {
+  background: rgba(179, 69, 79, 0.24);
+  border-style: solid;
+  transform: scale(1.12);
 }
 
 /*
@@ -1406,6 +1510,18 @@ svg {
 
 .sticky-loose:hover .resize-handle {
   opacity: 0.7;
+}
+
+/* Touch devices have no hover, so the resize handle must be visible (and
+   large enough to hit reliably) all the time rather than only on hover. */
+@media (hover: none), (pointer: coarse) {
+  .resize-handle {
+    opacity: 0.6;
+    width: 28px;
+    height: 28px;
+    right: -6px;
+    bottom: -6px;
+  }
 }
 
 .sticky-image {
@@ -2525,10 +2641,10 @@ input:focus-visible {
   }
 
   .trash-zone {
-    left: 8px;
-    bottom: 8px;
-    width: 54px;
-    padding: 7px 4px;
+    right: 10px;
+    bottom: 90px;
+    width: 46px;
+    height: 46px;
   }
 
   .canvas-toolbar {

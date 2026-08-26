@@ -952,25 +952,44 @@ function isOverTrash(clientX, clientY) {
 
 function wireStickyInteractions() {
   const page = document.querySelector('#notebookPage');
+  const DRAG_THRESHOLD = 6;
 
   page.querySelectorAll('.sticky-loose').forEach((sticky) => {
     let dragging = false;
+    let pendingStart = null;
     let offsetX = 0;
     let offsetY = 0;
 
-    sticky.addEventListener('pointerdown', (event) => {
-      if (event.target.closest('[contenteditable]') || event.target.closest('input') || event.target.closest('button') || event.target.closest('.resize-handle')) return;
+    const beginDrag = (clientX, clientY, pointerId) => {
       dragging = true;
-      sticky.setPointerCapture(event.pointerId);
+      sticky.setPointerCapture(pointerId);
+      // Editable text may have grabbed focus on pointerdown before the
+      // move threshold was reached — drop it so the caret doesn't linger.
+      if (document.activeElement && sticky.contains(document.activeElement)) document.activeElement.blur();
       const rect = page.getBoundingClientRect();
-      offsetX = event.clientX - rect.left - (parseFloat(sticky.style.getPropertyValue('--x')) / 100) * rect.width;
-      offsetY = event.clientY - rect.top - (parseFloat(sticky.style.getPropertyValue('--y')) / 100) * rect.height;
+      offsetX = clientX - rect.left - (parseFloat(sticky.style.getPropertyValue('--x')) / 100) * rect.width;
+      offsetY = clientY - rect.top - (parseFloat(sticky.style.getPropertyValue('--y')) / 100) * rect.height;
       sticky.classList.add('is-dragging');
       trashZoneEl() && trashZoneEl().classList.add('is-visible');
+    };
+
+    sticky.addEventListener('pointerdown', (event) => {
+      // Buttons/inputs/resize-handle keep their normal behavior; everything
+      // else (including editable text) becomes a drag candidate — a plain
+      // tap still reaches the text underneath since we don't intercept
+      // it until movement crosses DRAG_THRESHOLD (see pointermove below).
+      if (event.target.closest('input') || event.target.closest('button') || event.target.closest('.resize-handle')) return;
+      pendingStart = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
     });
 
     sticky.addEventListener('pointermove', (event) => {
-      if (!dragging) return;
+      if (!pendingStart || pendingStart.pointerId !== event.pointerId) return;
+      if (!dragging) {
+        const dx = event.clientX - pendingStart.x;
+        const dy = event.clientY - pendingStart.y;
+        if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+        beginDrag(pendingStart.x, pendingStart.y, event.pointerId);
+      }
       const rect = page.getBoundingClientRect();
       // Allow a small overhang so notes can sit flush against — or slightly past — the page edge.
       let xPct = ((event.clientX - rect.left - offsetX) / rect.width) * 100;
@@ -984,6 +1003,7 @@ function wireStickyInteractions() {
     });
 
     const endDrag = (event) => {
+      pendingStart = null;
       if (!dragging) return;
       dragging = false;
       sticky.classList.remove('is-dragging');
@@ -1708,22 +1728,35 @@ function wireMindmapInteractions() {
 
   canvas.querySelectorAll('.mindmap-branch').forEach((node) => {
     let dragging = false;
+    let pendingStart = null;
     let offsetX = 0;
     let offsetY = 0;
+    const DRAG_THRESHOLD = 6;
 
-    node.addEventListener('pointerdown', (event) => {
-      if (event.target.closest('[contenteditable]') || event.target.closest('button')) return;
+    const beginDrag = (clientX, clientY, pointerId) => {
       dragging = true;
       node.classList.add('is-dragging');
-      node.setPointerCapture(event.pointerId);
+      node.setPointerCapture(pointerId);
+      if (document.activeElement && node.contains(document.activeElement)) document.activeElement.blur();
       const rect = canvas.getBoundingClientRect();
       const branch = getNodeByPath(node.dataset.path);
-      offsetX = event.clientX - rect.left - (branch.x / 100) * rect.width;
-      offsetY = event.clientY - rect.top - (branch.y / 100) * rect.height;
+      offsetX = clientX - rect.left - (branch.x / 100) * rect.width;
+      offsetY = clientY - rect.top - (branch.y / 100) * rect.height;
+    };
+
+    node.addEventListener('pointerdown', (event) => {
+      if (event.target.closest('button')) return;
+      pendingStart = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
     });
 
     node.addEventListener('pointermove', (event) => {
-      if (!dragging) return;
+      if (!pendingStart || pendingStart.pointerId !== event.pointerId) return;
+      if (!dragging) {
+        const dx0 = event.clientX - pendingStart.x;
+        const dy0 = event.clientY - pendingStart.y;
+        if (Math.hypot(dx0, dy0) < DRAG_THRESHOLD) return;
+        beginDrag(pendingStart.x, pendingStart.y, event.pointerId);
+      }
       const rect = canvas.getBoundingClientRect();
       const xPct = Math.max(3, Math.min(97, ((event.clientX - rect.left - offsetX) / rect.width) * 100));
       const yPct = Math.max(3, Math.min(97, ((event.clientY - rect.top - offsetY) / rect.height) * 100));
@@ -1739,6 +1772,8 @@ function wireMindmapInteractions() {
     });
 
     const endDrag = () => {
+      pendingStart = null;
+      if (!dragging) return;
       dragging = false;
       node.classList.remove('is-dragging');
       scheduleSave();
