@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <defs>
+    <!-- Soft dropshadows for a cozy 3D feel -->
+    <filter id="shadow-app" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="2" dy="8" stdDeviation="6" flood-color="#4a3b2c" flood-opacity="0.25"/>
+    </filter>
+    <filter id="shadow-page" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="1.5" flood-color="#4a3b2c" flood-opacity="0.1"/>
+    </filter>
+    <filter id="shadow-tape" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="1" dy="2" stdDeviation="2" flood-color="#4a3b2c" flood-opacity="0.15"/>
+    </filter>
+    <filter id="shadow-pen" x="-30%" y="-30%" width="160%" height="160%">
+       <feDropShadow dx="-4" dy="6" stdDeviation="4" flood-color="#4a3b2c" flood-opacity="0.3"/>
+    </filter>
+
+    <!-- Warm Gradients -->
+    <linearGradient id="board" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#c99767"/>
+      <stop offset="100%" stop-color="#a67142"/>
+    </linearGradient>
+
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fff8f2"/>
+      <stop offset="100%" stop-color="#faebd5"/>
+    </linearGradient>
+    
+    <linearGradient id="tape" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#e8cfad"/>
+      <stop offset="100%" stop-color="#d6bba3"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Backboard (Brown Leather/Cardboard backing) -->
+  <rect x="16" y="24" width="76" height="82" rx="20" fill="url(#board)" filter="url(#shadow-app)"/>
+
+  <!-- Paper Page -->
+  <path d="M 28 14 
+           H 76 
+           A 20 20 0 0 1 96 34 
+           V 76 
+           C 96 86, 88 94, 76 98 
+           H 34 
+           A 20 20 0 0 1 14 78 
+           V 28
+           A 14 14 0 0 1 28 14 Z" 
+        fill="url(#paper)" filter="url(#shadow-page)"/>
+
+  <!-- The Peeling Corner (Dog-ear fold) -->
+  <path d="M 96 76
+           C 85 78, 77 86, 76 98
+           C 79 82, 87 77, 96 76 Z" 
+        fill="#e1c8a5"/>
+  <path d="M 96 76
+           C 82 78, 77 87, 76 98
+           C 80 87, 88 80, 96 76 Z" 
+        fill="#ffffff" opacity="0.6"/>
+
+  <!-- Drawn Lines -->
+  <g stroke="#ba9e83" stroke-width="4" stroke-linecap="round">
+    <line x1="38" y1="44" x2="72" y2="44"/>
+    <line x1="38" y1="60" x2="64" y2="60"/>
+    <line x1="38" y1="76" x2="52" y2="76"/>
+  </g>
+
+  <!-- Masking Tape -->
+  <g transform="translate(18, 11) rotate(-18)" filter="url(#shadow-tape)">
+    <!-- Ragged/torn edges along top and bottom for a textured tape look -->
+    <polygon points="4,2 8,5 12,1 16,6 20,2 24,5 28,1 32,5 36,2 40,6 44,1 48,5 
+                     46,26 42,23 38,27 34,23 30,27 26,23 22,27 18,23 14,27 10,23 6,27 2,24" 
+             fill="url(#tape)" opacity="0.95"/>
+  </g>
+
+  <!-- Stylized Pen -->
+  <g transform="translate(74, 52) rotate(26)" filter="url(#shadow-pen)">
+    <!-- Pen barrel -->
+    <rect x="0" y="16" width="14" height="42" rx="5" fill="#69462c"/>
+    <!-- Pen barrel highlight for 3D depth -->
+    <rect x="1.5" y="17" width="4.5" height="40" rx="2.25" fill="#8f6b4d"/>
+    <!-- Silver/Dark ring separating tip -->
+    <rect x="0" y="58" width="14" height="2" fill="#3a2517"/>
+    <!-- Pen Nib -->
+    <path d="M 0 60 L 6 72 C 7 74 7 74 8 72 L 14 60 Z" fill="#4d3421"/>
+    <!-- Top Cap Dome -->
+    <path d="M -1 16 L 15 16 L 12 4 C 11 1, 3 1, 2 4 Z" fill="#3a2517"/>
+    <path d="M 1 12 L 13 12 L 11 4 C 10 2, 4 2, 3 4 Z" fill="#4d3423"/>
+    <!-- Pocket Clip -->
+    <rect x="12" y="8" width="4" height="22" rx="2" fill="#483321"/>
+    <rect x="12.5" y="9" width="1.5" height="20" rx="0.75" fill="#75563b"/>
+  </g>
+</svg>

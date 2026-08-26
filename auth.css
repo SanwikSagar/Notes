@@ -1,0 +1,189 @@
+/* Shared styles for the in-page auth gate (login + create account). Reuses variables from styles.css. */
+
+.auth-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg, #f1e6d3);
+}
+
+.auth-gate[hidden] {
+  display: none;
+}
+
+.auth-card {
+  position: relative;
+  width: 100%;
+  max-width: 380px;
+  background: #fffaf0;
+  border: 1px solid var(--line, #e6d8bd);
+  border-radius: var(--radius-md, 12px);
+  padding: 40px 28px 32px;
+  box-shadow:
+    0 22px 44px rgba(74, 61, 42, 0.16),
+    0 8px 18px rgba(74, 61, 42, 0.08);
+  background-image: radial-gradient(rgba(74, 61, 42, 0.05) 1px, transparent 1px);
+  background-size: 3px 3px;
+}
+
+/* A faint dog-ear fold at the bottom-right corner, matching the notebook pages in the app. */
+.auth-card::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 26px;
+  height: 26px;
+  background: linear-gradient(135deg, transparent 50%, rgba(74, 61, 42, 0.08) 50%, rgba(74, 61, 42, 0.14) 100%);
+  border-radius: 0 0 var(--radius-md, 12px) 0;
+  pointer-events: none;
+}
+
+/* Paperclip pinned through the top-left corner of the page, drawn as a standalone SVG asset */
+.auth-tape {
+  position: absolute;
+  top: -25px;
+  left: 30px;
+  width: 25px;
+  height: 50px;
+  transform: rotate(-10deg);
+  z-index: 2;
+  pointer-events: none;
+  /* Mask out ONLY the far-left wire (the back stem) below the card edge */
+  clip-path: polygon(-50% -50%, 150% -50%, 150% 150%, 22% 150%, 22% 50%, -50% 50%);
+}
+
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.auth-brand .banner-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+}
+
+.auth-brand h1 {
+  margin: 0;
+  font-size: 17px;
+  color: var(--ink, #4a3d2a);
+}
+
+.auth-card h2 {
+  margin: 0 0 6px;
+  color: var(--ink, #4a3d2a);
+  font-size: 20px;
+}
+
+.auth-card .auth-sub {
+  margin: 0 0 22px;
+  color: var(--muted, #9a8a6f);
+  font-size: 13.5px;
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.auth-field label {
+  font-size: 13px;
+  color: var(--muted, #9a8a6f);
+}
+
+.auth-field input {
+  font: inherit;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm, 8px);
+  border: 1px solid var(--line, #e6d8bd);
+  background: var(--bg, #f1e6d3);
+  color: var(--ink, #4a3d2a);
+}
+
+.auth-field input:focus {
+  outline: 2px solid var(--ink, #4a3d2a);
+  outline-offset: 1px;
+}
+
+.auth-submit {
+  width: 100%;
+  padding: 11px;
+  margin-top: 4px;
+  border: none;
+  border-radius: var(--radius-sm, 8px);
+  background: var(--ink, #4a3d2a);
+  color: #fffaf0;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.auth-submit:hover {
+  filter: brightness(1.1);
+}
+
+.auth-submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.auth-error {
+  background: rgba(178, 60, 50, 0.1);
+  border: 1px solid #b23c32;
+  color: #7d2a22;
+  border-radius: var(--radius-sm, 8px);
+  padding: 8px 10px;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0;
+  color: var(--muted, #9a8a6f);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line, #e6d8bd);
+}
+
+.google-btn-wrap {
+  display: flex;
+  justify-content: center;
+}
+
+.auth-footer {
+  margin-top: 20px;
+  text-align: center;
+  font-size: 13.5px;
+  color: var(--muted, #9a8a6f);
+}
+
+.auth-footer a {
+  color: var(--ink, #4a3d2a);
+  font-weight: 600;
+}
+
+.auth-note {
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--muted, #9a8a6f);
+  text-align: center;
+}

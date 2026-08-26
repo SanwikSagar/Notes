@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 70 140" width="70" height="140">
+  <defs>
+    <!-- Steeper gradient for brighter highlight and deeper shadows -->
+    <linearGradient id="clipMetal" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="25%" stop-color="#b6c2c9"/>
+      <stop offset="60%" stop-color="#738188"/>
+      <stop offset="100%" stop-color="#2d3538"/>
+    </linearGradient>
+
+    <!-- Deep shadow for the wire pulling off the page -->
+    <filter id="clipShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="3" dy="4" stdDeviation="3.5" flood-color="#4a3d2a" flood-opacity="0.6"/>
+    </filter>
+  </defs>
+
+  <!-- Group for rotation so the paperclip looks organically placed -->
+  <g transform="rotate(6 35 70)">
+    <!-- Base wire with gradient and shadow -->
+    <!-- The path is drawn with correctly proportioned parallel straight segments and semi-circular ends -->
+    <path d="M 45,95
+             A 12,12 0 0,1 21,95
+             L 21,30
+             A 18,18 0 0,1 57,30
+             L 57,110
+             A 24,24 0 0,1 9,110
+             L 9,25"
+          fill="none"
+          stroke="url(#clipMetal)"
+          stroke-width="5.5"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          filter="url(#clipShadow)"/>
+
+    <!-- Dual highlight lines offset inside the stroke to give a 3D cylindrical lighting effect -->
+    <!-- Inner edge reflection -->
+    <path d="M 45,95
+             A 12,12 0 0,1 21,95
+             L 21,30
+             A 18,18 0 0,1 57,30
+             L 57,110
+             A 24,24 0 0,1 9,110
+             L 9,25"
+          fill="none"
+          stroke="#ffffff"
+          stroke-opacity="0.9"
+          stroke-width="1.2"
+          stroke-linecap="round"
+          transform="translate(-1, -1.2)"/>
+          
+    <path d="M 45,95
+             A 12,12 0 0,1 21,95
+             L 21,30
+             A 18,18 0 0,1 57,30
+             L 57,110
+             A 24,24 0 0,1 9,110
+             L 9,25"
+          fill="none"
+          stroke="#404b50"
+          stroke-opacity="0.6"
+          stroke-width="0.8"
+          stroke-linecap="round"
+          transform="translate(1.2, 1.2)"/>
+  </g>
+</svg>
