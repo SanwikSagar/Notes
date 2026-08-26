@@ -834,6 +834,7 @@ function wireSwipe() {
   const stage = document.querySelector('#pageFlipStage');
   let startX = 0;
   let startY = 0;
+  const DRAW_TOOLS = ['pen', 'highlighter', 'eraser'];
 
   stage.addEventListener('touchstart', (event) => {
     startX = event.touches[0].clientX;
@@ -841,6 +842,9 @@ function wireSwipe() {
   }, { passive: true });
 
   stage.addEventListener('touchend', (event) => {
+    // A pen/highlighter/eraser stroke shouldn't also flip the page —
+    // only "select" mode (or any non-drawing tool) reacts to swipes.
+    if (DRAW_TOOLS.includes(state.tool)) return;
     const dx = event.changedTouches[0].clientX - startX;
     const dy = event.changedTouches[0].clientY - startY;
     if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy)) return;
@@ -865,6 +869,12 @@ function wirePageNav() {
 const PAGE_BASE_WIDTH = 700;
 const PAGE_BASE_HEIGHT = 990;
 let activeCanvasResize = null;
+
+// Shared with wirePinchResize() below: lets the global two-finger tracker
+// (wired once) cancel an in-progress single-finger drag on whichever sticky
+// a pinch starts on, without both gestures fighting over the same pointer.
+const stickyDragControllers = new WeakMap();
+let activePinchSticky = null;
 
 function fitPageScale() {
   const stage = document.querySelector('#pageFlipStage');
@@ -967,15 +977,6 @@ function wireStickyInteractions() {
     let offsetX = 0;
     let offsetY = 0;
 
-    // Two-finger pinch resize — a second finger landing on the note takes
-    // over from drag/tap entirely until both fingers lift.
-    const activePointers = new Map();
-    let pinching = false;
-    let pinchStartDist = 0;
-    let pinchStartWidth = 0;
-
-    const distanceBetween = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-
     const beginDrag = (clientX, clientY, pointerId) => {
       dragging = true;
       sticky.setPointerCapture(pointerId);
@@ -989,7 +990,20 @@ function wireStickyInteractions() {
       trashZoneEl() && trashZoneEl().classList.add('is-visible');
     };
 
-    const endDragState = () => {
+    // Called by wirePinchResize() the moment a second finger starts a
+    // pinch on this note, so a single-finger drag never fights the resize.
+    const cancelDrag = () => {
+      pendingStart = null;
+      if (!dragging) return;
+      dragging = false;
+      sticky.classList.remove('is-dragging');
+      const trash = trashZoneEl();
+      if (trash) trash.classList.remove('is-visible', 'is-target');
+    };
+    stickyDragControllers.set(sticky, { cancelDrag });
+
+    const commitDragEnd = () => {
+      pendingStart = null;
       if (!dragging) return;
       dragging = false;
       sticky.classList.remove('is-dragging');
@@ -1019,34 +1033,14 @@ function wireStickyInteractions() {
       // tap still reaches the text underneath since we don't intercept
       // it until movement crosses DRAG_THRESHOLD (see pointermove below).
       if (event.target.closest('input') || event.target.closest('button') || event.target.closest('.resize-handle')) return;
-
-      activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-
-      if (activePointers.size >= 2) {
-        endDragState();
-        pendingStart = null;
-        pinching = true;
-        const pts = [...activePointers.values()].slice(0, 2);
-        pinchStartDist = Math.max(1, distanceBetween(pts[0], pts[1]));
-        pinchStartWidth = sticky.getBoundingClientRect().width / (state.pageScale || 1);
-        sticky.setPointerCapture(event.pointerId);
-      } else if (!pinching) {
-        pendingStart = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
-      }
+      // A pinch is already in progress on this note — a second pointerdown
+      // (e.g. a third finger) shouldn't start a competing drag.
+      if (activePinchSticky === sticky) return;
+      pendingStart = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
     });
 
     sticky.addEventListener('pointermove', (event) => {
-      if (activePointers.has(event.pointerId)) activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-
-      if (pinching) {
-        if (activePointers.size < 2) return;
-        const pts = [...activePointers.values()].slice(0, 2);
-        const dist = distanceBetween(pts[0], pts[1]);
-        const width = Math.max(120, Math.min(420, pinchStartWidth * (dist / pinchStartDist)));
-        sticky.style.setProperty('--w', `${width}px`);
-        return;
-      }
-
+      if (activePinchSticky === sticky) return;
       if (!pendingStart || pendingStart.pointerId !== event.pointerId) return;
       if (!dragging) {
         const dx = event.clientX - pendingStart.x;
@@ -1066,25 +1060,68 @@ function wireStickyInteractions() {
       if (trash) trash.classList.toggle('is-target', isOverTrash(event.clientX, event.clientY));
     });
 
-    const endPointer = (event) => {
-      activePointers.delete(event.pointerId);
-
-      if (pinching && activePointers.size < 2) {
-        pinching = false;
-        const data = (currentPage().stickies || []).find((s) => s.id === sticky.dataset.id);
-        if (data) data.width = parseFloat(sticky.style.getPropertyValue('--w'));
-        scheduleSave();
-      }
-
-      pendingStart = null;
-      endDragState();
-    };
-
-    sticky.addEventListener('pointerup', endPointer);
-    sticky.addEventListener('pointercancel', endPointer);
+    sticky.addEventListener('pointerup', commitDragEnd);
+    sticky.addEventListener('pointercancel', commitDragEnd);
   });
 
   wireStickyResize();
+}
+
+/* Two-finger resize for stickies — wired once (not per render) on the
+   persistent #notebookPage shell. Tracked globally rather than per-sticky
+   because real pinch gestures rarely land both fingers within a small
+   note's bounds; whichever note the FIRST finger touched is what resizes,
+   no matter where the second finger lands. */
+function wirePinchResize() {
+  const page = document.querySelector('#notebookPage');
+  if (!page) return;
+
+  const pointers = new Map();
+  let candidateSticky = null;
+  let pinchStartDist = 0;
+  let pinchStartWidth = 0;
+
+  const distanceBetween = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+  page.addEventListener('pointerdown', (event) => {
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+    if (pointers.size === 1) {
+      candidateSticky = event.target.closest ? event.target.closest('.sticky-loose') : null;
+    } else if (pointers.size === 2 && candidateSticky && !activePinchSticky) {
+      activePinchSticky = candidateSticky;
+      const controller = stickyDragControllers.get(activePinchSticky);
+      if (controller) controller.cancelDrag();
+      const pts = [...pointers.values()];
+      pinchStartDist = Math.max(1, distanceBetween(pts[0], pts[1]));
+      pinchStartWidth = activePinchSticky.getBoundingClientRect().width / (state.pageScale || 1);
+    }
+  });
+
+  page.addEventListener('pointermove', (event) => {
+    if (!pointers.has(event.pointerId)) return;
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (!activePinchSticky || pointers.size < 2) return;
+    const pts = [...pointers.values()].slice(0, 2);
+    const dist = distanceBetween(pts[0], pts[1]);
+    const width = Math.max(120, Math.min(420, pinchStartWidth * (dist / pinchStartDist)));
+    activePinchSticky.style.setProperty('--w', `${width}px`);
+  });
+
+  const endPointer = (event) => {
+    pointers.delete(event.pointerId);
+
+    if (activePinchSticky && pointers.size < 2) {
+      const data = (currentPage().stickies || []).find((s) => s.id === activePinchSticky.dataset.id);
+      if (data) data.width = parseFloat(activePinchSticky.style.getPropertyValue('--w'));
+      scheduleSave();
+      activePinchSticky = null;
+    }
+    if (pointers.size === 0) candidateSticky = null;
+  };
+
+  page.addEventListener('pointerup', endPointer);
+  page.addEventListener('pointercancel', endPointer);
 }
 
 function wireStickyResize() {
@@ -2441,12 +2478,17 @@ function openRailPopover(button, menu) {
   menu.style.bottom = 'auto';
   menu.style.left = 'auto';
   menu.style.right = `${window.innerWidth - rect.left + 10}px`;
+  menu.style.zIndex = '40';
 }
 
 function wireBrushOptions() {
   const btn = document.querySelector('#brushOptionsBtn');
   const menu = document.querySelector('#brushOptionsMenu');
   const widthInput = document.querySelector('#penWidthRange');
+  // .page-flip-stage has `perspective`, which makes it the containing block
+  // for any position:fixed descendant — moving the popover to <body> is the
+  // only reliable way to keep it truly viewport-fixed and unclipped.
+  document.body.appendChild(menu);
 
   btn.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -2474,6 +2516,7 @@ function wireBrushOptions() {
 function wirePageBackground() {
   const btn = document.querySelector('#pageBgBtn');
   const menu = document.querySelector('#pageBgMenu');
+  document.body.appendChild(menu);
 
   btn.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -2848,6 +2891,7 @@ wireDrawingTools();
 wireUndoRedo();
 wireBrushOptions();
 wirePageBackground();
+wirePinchResize();
 wireViewTabs();
 wireFlashcards();
 wireFlashcardToolbar();

@@ -1025,6 +1025,10 @@ svg {
   transform-style: preserve-3d;
   transform-origin: left center;
   will-change: transform, opacity;
+  /* Blocks native pinch-zoom across the whole page so our own two-finger
+     resize gesture on stickies gets full control instead of being
+     cancelled mid-gesture by the browser. */
+  touch-action: none;
 }
 
 /* A faint dog-ear fold at the bottom-right corner, like a well-used
@@ -1130,6 +1134,9 @@ svg {
   overflow-y: hidden;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
+  /* pan-y (not the parent's none) keeps vertical touch-scroll working for
+     long pages while still blocking native pinch-zoom here too. */
+  touch-action: pan-y;
   padding: 28px 36px 36px 48px;
   /* A visible (if thin) scrollbar — hiding it entirely gave no hint that
      more content existed below, which read as truncation. app.js only
@@ -1287,7 +1294,8 @@ svg {
 
 .page-copy {
   margin: 6px 0 20px;
-  font-size: 16.5px;
+  font-family: 'Patrick Hand', cursive;
+  font-size: 18px;
   line-height: 1.45;
   color: var(--ink);
   max-width: 46ch;
@@ -1457,6 +1465,7 @@ svg {
   padding: 12px 13px;
   border-radius: 4px;
   box-shadow: 3px 5px 0 rgba(58, 51, 39, 0.1);
+  font-family: 'Patrick Hand', cursive;
   font-size: 15.5px;
   max-width: 260px;
 }
