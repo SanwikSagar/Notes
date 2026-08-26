@@ -2395,6 +2395,139 @@ function wireExportImport() {
   });
 }
 
+/* ---------- Import PDF / Word / TXT / MD as new pages ---------- */
+
+function escapeHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function textToPageCopyHtml(text) {
+  return escapeHtml(text).replace(/\n/g, '<br>');
+}
+
+/* Keeps each imported page a readable length by splitting on paragraph
+   breaks rather than mid-sentence, so long documents become several
+   normal-sized pages instead of one giant wall of text. */
+function chunkText(text, maxLen = 1200) {
+  const paragraphs = text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  const chunks = [];
+  let current = '';
+  paragraphs.forEach((p) => {
+    if (current && (current.length + p.length + 2) > maxLen) {
+      chunks.push(current.trim());
+      current = p;
+    } else {
+      current = current ? `${current}\n\n${p}` : p;
+    }
+  });
+  if (current) chunks.push(current.trim());
+  return chunks.length ? chunks : [text.trim()];
+}
+
+async function extractPdfText(file) {
+  if (typeof pdfjsLib === 'undefined') throw new Error('PDF_ENGINE_UNAVAILABLE');
+  const buffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+  let text = '';
+  for (let i = 1; i <= pdf.numPages; i += 1) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    text += `${content.items.map((item) => item.str).join(' ')}\n\n`;
+  }
+  return text;
+}
+
+async function extractDocxText(file) {
+  if (typeof mammoth === 'undefined') throw new Error('DOCX_ENGINE_UNAVAILABLE');
+  const buffer = await file.arrayBuffer();
+  const result = await mammoth.extractRawText({ arrayBuffer: buffer });
+  return result.value || '';
+}
+
+function insertImportedTextAsPages(filename, text) {
+  const nb = currentNotebook();
+  const chunks = chunkText(text);
+  const baseTitle = filename.replace(/\.[^.]+$/, '') || 'Imported file';
+  const firstIndex = nb.pages.length;
+
+  chunks.forEach((chunk, i) => {
+    nb.pages.push({
+      id: `import${Date.now()}${i}`,
+      tab: chunks.length > 1 ? `${baseTitle} ${i + 1}` : baseTitle,
+      title: chunks.length > 1 ? `${baseTitle} (${i + 1}/${chunks.length})` : baseTitle,
+      date: 'Imported',
+      copy: textToPageCopyHtml(chunk),
+      blocks: [],
+      stickies: []
+    });
+  });
+
+  renderPageTabs();
+  goToPage(firstIndex, 'next');
+}
+
+async function importFileAsNotes(file) {
+  const name = file.name || 'Imported file';
+  const ext = (name.split('.').pop() || '').toLowerCase();
+
+  openModal(`
+    <h3>Importing "${escapeHtml(name)}"…</h3>
+    <p>Extracting text — this may take a moment for large files.</p>
+  `);
+
+  try {
+    let text = '';
+    if (ext === 'txt' || ext === 'md' || ext === 'markdown') {
+      text = await file.text();
+    } else if (ext === 'pdf') {
+      text = await extractPdfText(file);
+    } else if (ext === 'docx') {
+      text = await extractDocxText(file);
+    } else if (ext === 'doc') {
+      throw new Error('DOC_UNSUPPORTED');
+    } else {
+      throw new Error('UNSUPPORTED_TYPE');
+    }
+
+    closeModal();
+    text = (text || '').trim();
+    if (!text) {
+      openModal(`
+        <h3>Nothing to import</h3>
+        <p>Couldn't find any readable text in that file.</p>
+        <div class="modal-actions"><button class="modal-btn confirm" data-modal-close>OK</button></div>
+      `);
+      return;
+    }
+    insertImportedTextAsPages(name, text);
+  } catch (err) {
+    closeModal();
+    const message = err && err.message === 'DOC_UNSUPPORTED'
+      ? "Old .doc files aren't supported in the browser — save it as .docx and try again."
+      : err && err.message === 'UNSUPPORTED_TYPE'
+        ? 'Only PDF, Word (.docx), .txt, and .md files can be imported.'
+        : "Couldn't read that file. Please try again.";
+    openModal(`
+      <h3>Import failed</h3>
+      <p>${escapeHtml(message)}</p>
+      <div class="modal-actions"><button class="modal-btn confirm" data-modal-close>OK</button></div>
+    `);
+  }
+}
+
+function wireFileToNotesImport() {
+  const btn = document.querySelector('#importFileToNotesBtn');
+  const fileInput = document.querySelector('#fileToNotesInput');
+  if (!btn || !fileInput) return;
+
+  btn.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files && fileInput.files[0];
+    fileInput.value = '';
+    if (file) importFileAsNotes(file);
+  });
+}
+
 function wireNewNotebook() {
   document.querySelector('#newNotebookBtn').addEventListener('click', () => {
     let selectedColor = NOTEBOOK_COLORS[Object.keys(notebooks).length % NOTEBOOK_COLORS.length].id;
@@ -2991,6 +3124,7 @@ wireReviewToolbar();
 wireReviewFilters();
 wireSearch();
 wireMenus();
+wireFileToNotesImport();
 wireNewNotebook();
 wireQuickFilters();
 wireSidebarToggle();

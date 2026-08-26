@@ -11,6 +11,14 @@
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mammoth@1/mammoth.browser.min.js"></script>
+  <script type="module">
+    // pdfjs-dist v4 ships ESM-only — import it here and expose it as a
+    // plain global so the rest of the app (plain scripts) can use it.
+    import * as pdfjsLib from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4/build/pdf.min.mjs';
+    window.pdfjsLib = pdfjsLib;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4/build/pdf.worker.min.mjs';
+  </script>
 </head>
 <body>
 
@@ -132,6 +140,8 @@
             <button id="exportNotesBtn">⭳ Export all notes (.json)</button>
             <button id="importNotesBtn">⭱ Import notes (.json)</button>
             <input type="file" id="importFileInput" accept="application/json" hidden>
+            <button id="importFileToNotesBtn">📄 Import PDF / Word / TXT / MD</button>
+            <input type="file" id="fileToNotesInput" accept=".pdf,.doc,.docx,.txt,.md,.markdown" hidden>
           </div>
         </div>
       </div>
