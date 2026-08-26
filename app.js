@@ -400,7 +400,14 @@ function renderPageTabs() {
   `).join('');
 
   rail.querySelectorAll('.page-tab').forEach((tab) => {
-    tab.addEventListener('click', () => goToPage(Number(tab.dataset.index)));
+    tab.addEventListener('click', () => {
+      goToPage(Number(tab.dataset.index));
+      const wrap = tab.closest('.page-tab-wrap');
+      rail.querySelectorAll('.page-tab-wrap.is-revealed').forEach((w) => {
+        if (w !== wrap) w.classList.remove('is-revealed');
+      });
+      wrap.classList.toggle('is-revealed');
+    });
     tab.addEventListener('dblclick', (event) => {
       event.stopPropagation();
       openRenamePageModal(Number(tab.dataset.index));
@@ -960,6 +967,15 @@ function wireStickyInteractions() {
     let offsetX = 0;
     let offsetY = 0;
 
+    // Two-finger pinch resize — a second finger landing on the note takes
+    // over from drag/tap entirely until both fingers lift.
+    const activePointers = new Map();
+    let pinching = false;
+    let pinchStartDist = 0;
+    let pinchStartWidth = 0;
+
+    const distanceBetween = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
     const beginDrag = (clientX, clientY, pointerId) => {
       dragging = true;
       sticky.setPointerCapture(pointerId);
@@ -973,37 +989,7 @@ function wireStickyInteractions() {
       trashZoneEl() && trashZoneEl().classList.add('is-visible');
     };
 
-    sticky.addEventListener('pointerdown', (event) => {
-      // Buttons/inputs/resize-handle keep their normal behavior; everything
-      // else (including editable text) becomes a drag candidate — a plain
-      // tap still reaches the text underneath since we don't intercept
-      // it until movement crosses DRAG_THRESHOLD (see pointermove below).
-      if (event.target.closest('input') || event.target.closest('button') || event.target.closest('.resize-handle')) return;
-      pendingStart = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
-    });
-
-    sticky.addEventListener('pointermove', (event) => {
-      if (!pendingStart || pendingStart.pointerId !== event.pointerId) return;
-      if (!dragging) {
-        const dx = event.clientX - pendingStart.x;
-        const dy = event.clientY - pendingStart.y;
-        if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
-        beginDrag(pendingStart.x, pendingStart.y, event.pointerId);
-      }
-      const rect = page.getBoundingClientRect();
-      // Allow a small overhang so notes can sit flush against — or slightly past — the page edge.
-      let xPct = ((event.clientX - rect.left - offsetX) / rect.width) * 100;
-      let yPct = ((event.clientY - rect.top - offsetY) / rect.height) * 100;
-      xPct = Math.max(-8, Math.min(96, xPct));
-      yPct = Math.max(-8, Math.min(96, yPct));
-      sticky.style.setProperty('--x', `${xPct}%`);
-      sticky.style.setProperty('--y', `${yPct}%`);
-      const trash = trashZoneEl();
-      if (trash) trash.classList.toggle('is-target', isOverTrash(event.clientX, event.clientY));
-    });
-
-    const endDrag = (event) => {
-      pendingStart = null;
+    const endDragState = () => {
       if (!dragging) return;
       dragging = false;
       sticky.classList.remove('is-dragging');
@@ -1027,8 +1013,75 @@ function wireStickyInteractions() {
       scheduleSave();
     };
 
-    sticky.addEventListener('pointerup', endDrag);
-    sticky.addEventListener('pointercancel', endDrag);
+    sticky.addEventListener('pointerdown', (event) => {
+      // Buttons/inputs/resize-handle keep their normal behavior; everything
+      // else (including editable text) becomes a drag candidate — a plain
+      // tap still reaches the text underneath since we don't intercept
+      // it until movement crosses DRAG_THRESHOLD (see pointermove below).
+      if (event.target.closest('input') || event.target.closest('button') || event.target.closest('.resize-handle')) return;
+
+      activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+      if (activePointers.size >= 2) {
+        endDragState();
+        pendingStart = null;
+        pinching = true;
+        const pts = [...activePointers.values()].slice(0, 2);
+        pinchStartDist = Math.max(1, distanceBetween(pts[0], pts[1]));
+        pinchStartWidth = sticky.getBoundingClientRect().width / (state.pageScale || 1);
+        sticky.setPointerCapture(event.pointerId);
+      } else if (!pinching) {
+        pendingStart = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+      }
+    });
+
+    sticky.addEventListener('pointermove', (event) => {
+      if (activePointers.has(event.pointerId)) activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+      if (pinching) {
+        if (activePointers.size < 2) return;
+        const pts = [...activePointers.values()].slice(0, 2);
+        const dist = distanceBetween(pts[0], pts[1]);
+        const width = Math.max(120, Math.min(420, pinchStartWidth * (dist / pinchStartDist)));
+        sticky.style.setProperty('--w', `${width}px`);
+        return;
+      }
+
+      if (!pendingStart || pendingStart.pointerId !== event.pointerId) return;
+      if (!dragging) {
+        const dx = event.clientX - pendingStart.x;
+        const dy = event.clientY - pendingStart.y;
+        if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+        beginDrag(pendingStart.x, pendingStart.y, event.pointerId);
+      }
+      const rect = page.getBoundingClientRect();
+      // Allow a small overhang so notes can sit flush against — or slightly past — the page edge.
+      let xPct = ((event.clientX - rect.left - offsetX) / rect.width) * 100;
+      let yPct = ((event.clientY - rect.top - offsetY) / rect.height) * 100;
+      xPct = Math.max(-8, Math.min(96, xPct));
+      yPct = Math.max(-8, Math.min(96, yPct));
+      sticky.style.setProperty('--x', `${xPct}%`);
+      sticky.style.setProperty('--y', `${yPct}%`);
+      const trash = trashZoneEl();
+      if (trash) trash.classList.toggle('is-target', isOverTrash(event.clientX, event.clientY));
+    });
+
+    const endPointer = (event) => {
+      activePointers.delete(event.pointerId);
+
+      if (pinching && activePointers.size < 2) {
+        pinching = false;
+        const data = (currentPage().stickies || []).find((s) => s.id === sticky.dataset.id);
+        if (data) data.width = parseFloat(sticky.style.getPropertyValue('--w'));
+        scheduleSave();
+      }
+
+      pendingStart = null;
+      endDragState();
+    };
+
+    sticky.addEventListener('pointerup', endPointer);
+    sticky.addEventListener('pointercancel', endPointer);
   });
 
   wireStickyResize();
@@ -1339,36 +1392,42 @@ function setupCanvas() {
 
   canvas.addEventListener('pointermove', (event) => {
     if (!drawing) return;
-    const point = pointerToCanvas(event);
-    points.push(point);
-    const style = strokeStyleFor(state.tool);
-    ctx.globalCompositeOperation = style.comp;
-    ctx.strokeStyle = style.color;
-    ctx.lineWidth = style.width;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+    // Fast strokes/touch input coalesce several samples into one pointermove;
+    // replaying each one (instead of just the latest) keeps strokes smooth
+    // and continuous instead of choppy, closer to real pen/ink behavior.
+    const samples = typeof event.getCoalescedEvents === 'function' ? event.getCoalescedEvents() : null;
+    (samples && samples.length ? samples : [event]).forEach((sample) => {
+      const point = pointerToCanvas(sample);
+      points.push(point);
+      const style = strokeStyleFor(state.tool);
+      ctx.globalCompositeOperation = style.comp;
+      ctx.strokeStyle = style.color;
+      ctx.lineWidth = style.width;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
 
-    // Quadratic-curve through the midpoints of the last few points, rather than
-    // straight segments — this rounds off the jagged corners of raw pointer
-    // samples into a single smooth stroke, closer to natural handwriting.
-    if (points.length < 3) {
-      ctx.beginPath();
-      ctx.moveTo(last.x, last.y);
-      ctx.lineTo(point.x, point.y);
-      ctx.stroke();
-    } else {
-      const p1 = points[points.length - 3];
-      const p2 = points[points.length - 2];
-      const p3 = points[points.length - 1];
-      const start = midpoint(p1, p2);
-      const end = midpoint(p2, p3);
-      ctx.beginPath();
-      ctx.moveTo(start.x, start.y);
-      ctx.quadraticCurveTo(p2.x, p2.y, end.x, end.y);
-      ctx.stroke();
-    }
-    last = point;
-    if (points.length > 4) points.shift();
+      // Quadratic-curve through the midpoints of the last few points, rather than
+      // straight segments — this rounds off the jagged corners of raw pointer
+      // samples into a single smooth stroke, closer to natural handwriting.
+      if (points.length < 3) {
+        ctx.beginPath();
+        ctx.moveTo(last.x, last.y);
+        ctx.lineTo(point.x, point.y);
+        ctx.stroke();
+      } else {
+        const p1 = points[points.length - 3];
+        const p2 = points[points.length - 2];
+        const p3 = points[points.length - 1];
+        const start = midpoint(p1, p2);
+        const end = midpoint(p2, p3);
+        ctx.beginPath();
+        ctx.moveTo(start.x, start.y);
+        ctx.quadraticCurveTo(p2.x, p2.y, end.x, end.y);
+        ctx.stroke();
+      }
+      last = point;
+      if (points.length > 4) points.shift();
+    });
     SoundFX.writeScratch();
   });
 
@@ -1414,19 +1473,15 @@ function saveCanvasSnapshot() {
   if (pageKey) state.drawings[pageKey] = canvas.toDataURL();
 }
 
-const TOOL_LABELS = { none: 'Select', pen: 'Pen', highlighter: 'Highlighter', eraser: 'Eraser', sticky: 'Sticky' };
-
 function wireDrawingTools() {
   // Scoped to buttons with data-tool only — brushOptionsBtn/pageBgBtn share
   // the .tool-btn style but open popovers, they aren't drawing tools.
   const tools = document.querySelectorAll('.tool-btn[data-tool]');
-  const label = document.querySelector('#toolActiveLabel');
   tools.forEach((tool) => {
     tool.addEventListener('click', () => {
       tools.forEach((item) => item.classList.remove('is-active'));
       tool.classList.add('is-active');
       state.tool = tool.dataset.tool;
-      if (label) label.textContent = TOOL_LABELS[state.tool] || state.tool;
       updateCanvasPointerEvents();
 
       if (state.tool === 'sticky') {
@@ -2371,6 +2426,23 @@ function wireFormatBar() {
   });
 }
 
+/* Rail popovers (brush color/thickness, page background) are positioned
+   via fixed coordinates computed here rather than pure CSS — the rail
+   itself scrolls internally on short screens, and a CSS-only popover
+   would get silently clipped by that scroll container. */
+function openRailPopover(button, menu) {
+  menu.hidden = false;
+  const rect = button.getBoundingClientRect();
+  const menuRect = menu.getBoundingClientRect();
+  let top = rect.top + rect.height / 2 - menuRect.height / 2;
+  top = Math.max(8, Math.min(window.innerHeight - menuRect.height - 8, top));
+  menu.style.position = 'fixed';
+  menu.style.top = `${top}px`;
+  menu.style.bottom = 'auto';
+  menu.style.left = 'auto';
+  menu.style.right = `${window.innerWidth - rect.left + 10}px`;
+}
+
 function wireBrushOptions() {
   const btn = document.querySelector('#brushOptionsBtn');
   const menu = document.querySelector('#brushOptionsMenu');
@@ -2380,7 +2452,8 @@ function wireBrushOptions() {
     event.stopPropagation();
     const willOpen = menu.hidden;
     closeAllPopovers();
-    menu.hidden = !willOpen;
+    if (willOpen) openRailPopover(btn, menu);
+    else menu.hidden = true;
   });
 
   menu.querySelectorAll('.swatch').forEach((swatch) => {
@@ -2406,7 +2479,8 @@ function wirePageBackground() {
     event.stopPropagation();
     const willOpen = menu.hidden;
     closeAllPopovers();
-    menu.hidden = !willOpen;
+    if (willOpen) openRailPopover(btn, menu);
+    else menu.hidden = true;
   });
 
   menu.querySelectorAll('[data-bg]').forEach((option) => {
@@ -2755,8 +2829,16 @@ renderPage();
 renderFlashcard();
 renderMindmap();
 renderReview();
+function wirePageTabReveal() {
+  document.addEventListener('click', (event) => {
+    if (event.target.closest('.page-tabs-row')) return;
+    document.querySelectorAll('.page-tab-wrap.is-revealed').forEach((w) => w.classList.remove('is-revealed'));
+  });
+}
+
 wirePageNav();
 wirePageScaling();
+wirePageTabReveal();
 wireToolbarScaling();
 wireSwipe();
 wireAddPage();

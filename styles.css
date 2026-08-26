@@ -876,16 +876,10 @@ svg {
 }
 
 .page-tab-wrap:hover .page-tab-delete,
-.page-tab-wrap:hover .page-tab-rename {
+.page-tab-wrap:hover .page-tab-rename,
+.page-tab-wrap.is-revealed .page-tab-delete,
+.page-tab-wrap.is-revealed .page-tab-rename {
   display: flex;
-}
-
-/* No hover on touch — page rename/delete must stay visible always. */
-@media (hover: none), (pointer: coarse) {
-  .page-tab-delete,
-  .page-tab-rename {
-    display: flex;
-  }
 }
 
 .page-tab-delete:hover {
@@ -965,17 +959,6 @@ svg {
   background: var(--line);
   margin: 2px 0;
   flex-shrink: 0;
-}
-
-.tool-active-label {
-  margin-top: 4px;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: var(--muted);
-  text-align: center;
-  max-width: 46px;
 }
 
 /* Drop zone for deleting stickies/notes — fixed to the viewport (not the
@@ -2633,11 +2616,6 @@ input:focus-visible {
     right: 6px;
     padding: 8px 4px;
     gap: 5px;
-  }
-
-  .tool-active-label {
-    font-size: 8px;
-    max-width: 40px;
   }
 
   .trash-zone {
