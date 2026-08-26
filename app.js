@@ -2166,6 +2166,18 @@ function wireSearch() {
   const field = document.querySelector('#searchField');
   const input = document.querySelector('#searchInput');
   const results = document.querySelector('#searchResults');
+  // .toolbar has overflow:hidden — move the results dropdown to <body> and
+  // position it via computed coordinates so it isn't silently clipped.
+  document.body.appendChild(results);
+
+  function positionResults() {
+    const rect = field.getBoundingClientRect();
+    results.style.position = 'fixed';
+    results.style.top = `${rect.bottom + 8}px`;
+    results.style.left = 'auto';
+    results.style.right = `${Math.max(8, window.innerWidth - rect.right)}px`;
+    results.style.zIndex = '40';
+  }
 
   field.querySelector('svg').addEventListener('click', () => {
     field.classList.toggle('is-open');
@@ -2202,12 +2214,13 @@ function wireSearch() {
       });
     });
     results.hidden = false;
+    positionResults();
   }
 
   input.addEventListener('input', renderResults);
   input.addEventListener('focus', () => { if (input.value.trim()) renderResults(); });
   document.addEventListener('click', (event) => {
-    if (!wrap.contains(event.target)) results.hidden = true;
+    if (!wrap.contains(event.target) && !results.contains(event.target)) results.hidden = true;
   });
 }
 
@@ -2238,11 +2251,13 @@ function wireMenus() {
 
   const moreBtn = document.querySelector('#moreBtn');
   const moreMenu = document.querySelector('#moreMenu');
+  document.body.appendChild(moreMenu);
   moreBtn.addEventListener('click', (event) => {
     event.stopPropagation();
     const willOpen = moreMenu.hidden;
     closeAllPopovers();
-    moreMenu.hidden = !willOpen;
+    if (willOpen) openBelowPopover(moreBtn, moreMenu);
+    else moreMenu.hidden = true;
   });
   document.addEventListener('click', () => { moreMenu.hidden = true; });
 
@@ -2704,6 +2719,29 @@ function openRailPopover(button, menu) {
   menu.style.zIndex = '40';
 }
 
+/* Top-toolbar popovers (account, more-options) — same fixed-position trick
+   as openRailPopover: .toolbar has overflow:hidden (to clip its scaled
+   icons at narrow widths), which silently clips any CSS-positioned
+   dropdown living inside it, so these open below the button via computed
+   viewport coordinates instead. */
+function openBelowPopover(button, menu) {
+  menu.hidden = false;
+  const rect = button.getBoundingClientRect();
+  const menuRect = menu.getBoundingClientRect();
+  let left = rect.right - menuRect.width;
+  left = Math.max(8, Math.min(window.innerWidth - menuRect.width - 8, left));
+  let top = rect.bottom + 8;
+  if (top + menuRect.height > window.innerHeight - 8) {
+    top = Math.max(8, rect.top - menuRect.height - 8);
+  }
+  menu.style.position = 'fixed';
+  menu.style.top = `${top}px`;
+  menu.style.left = `${left}px`;
+  menu.style.right = 'auto';
+  menu.style.bottom = 'auto';
+  menu.style.zIndex = '40';
+}
+
 function wireBrushOptions() {
   const btn = document.querySelector('#brushOptionsBtn');
   const menu = document.querySelector('#brushOptionsMenu');
@@ -3019,12 +3057,14 @@ function wireAccountMenu() {
   const btn = document.querySelector('#accountBtn');
   const menu = document.querySelector('#accountMenu');
   if (!btn || !menu) return;
+  document.body.appendChild(menu);
 
   btn.addEventListener('click', (event) => {
     event.stopPropagation();
     const willOpen = menu.hidden;
     closeAllPopovers();
-    menu.hidden = !willOpen;
+    if (willOpen) openBelowPopover(btn, menu);
+    else menu.hidden = true;
   });
 
   document.querySelector('#accountSignInBtn').addEventListener('click', () => {
