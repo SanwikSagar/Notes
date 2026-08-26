@@ -2322,6 +2322,24 @@ input:focus-visible {
   outline-offset: 1px;
 }
 
+.modal textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: 'Patrick Hand', cursive;
+  background: #fff;
+  color: var(--ink);
+  margin-bottom: 14px;
+  resize: vertical;
+}
+
+.modal textarea:focus {
+  outline: 2px solid var(--maths);
+  outline-offset: 1px;
+}
+
 .account-tabs {
   display: flex;
   gap: 6px;

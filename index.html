@@ -10,6 +10,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 <body>
 
@@ -200,6 +201,9 @@
               </button>
               <button class="tool-btn" data-tool="eraser" title="Eraser">
                 <svg viewBox="0 0 24 24"><path d="M4 15l8-8 7 7-6 6H8z"/><line x1="6" y1="20" x2="20" y2="20"/></svg>
+              </button>
+              <button class="tool-btn" id="convertPenToTextBtn" title="Convert pen writing to text">
+                <svg viewBox="0 0 24 24"><path d="M4 4h5M4 4v5M20 4h-5M20 4v5M4 20h5M4 20v-5M20 20h-5M20 20v-5"/><path d="M8 10h8M8 14h5"/></svg>
               </button>
               <div class="menu-wrap">
                 <button class="tool-btn" id="brushOptionsBtn" aria-haspopup="true" title="Pen color &amp; thickness">

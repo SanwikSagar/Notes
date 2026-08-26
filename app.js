@@ -1336,7 +1336,7 @@ function addNoteOfType(type, extra = {}) {
   } else if (type === 'list') {
     stickies.push({ id, tone: 'outline', x, y, title: 'List', list: ['New item'] });
   } else if (type === 'text') {
-    stickies.push({ id, tone: 'white', x, y, title: 'Note', text: 'Type here…' });
+    stickies.push({ id, tone: 'white', x, y, title: extra.title || 'Note', text: extra.text || 'Type here…' });
   } else if (type === 'image') {
     stickies.push({ id, x, y, width: 200, image: extra.dataUrl, title: 'Image note' });
   } else {
@@ -1583,6 +1583,96 @@ function restoreCanvas(canvas, dataUrl) {
   const img = new Image();
   img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
   img.src = dataUrl;
+}
+
+/* ---------- Pen writing → text (client-side OCR via Tesseract.js) ---------- */
+
+function canvasHasInk(canvas) {
+  const ctx = canvas.getContext('2d');
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  for (let i = 3; i < data.length; i += 4) {
+    if (data[i] > 10) return true;
+  }
+  return false;
+}
+
+function wireConvertPenToText() {
+  const btn = document.querySelector('#convertPenToTextBtn');
+  if (!btn) return;
+
+  btn.addEventListener('click', async () => {
+    const canvas = document.querySelector('#drawCanvas');
+    if (!canvas) return;
+
+    if (!canvasHasInk(canvas)) {
+      openModal(`
+        <h3>Nothing to convert</h3>
+        <p>Draw with the pen or highlighter first, then try again.</p>
+        <div class="modal-actions"><button class="modal-btn confirm" data-modal-close>OK</button></div>
+      `);
+      return;
+    }
+
+    if (typeof Tesseract === 'undefined') {
+      openModal(`
+        <h3>Handwriting recognition unavailable</h3>
+        <p>Couldn't load the recognition engine. Check your connection and try again.</p>
+        <div class="modal-actions"><button class="modal-btn confirm" data-modal-close>OK</button></div>
+      `);
+      return;
+    }
+
+    btn.disabled = true;
+    openModal(`
+      <h3>Reading your handwriting…</h3>
+      <p>This can take a few seconds — clearer, larger, printed-style writing converts best.</p>
+    `);
+
+    try {
+      const { data } = await Tesseract.recognize(canvas, 'eng');
+      const text = (data.text || '').trim();
+      closeModal();
+
+      if (!text) {
+        openModal(`
+          <h3>Couldn't read anything</h3>
+          <p>Try writing bigger and clearer, then convert again.</p>
+          <div class="modal-actions"><button class="modal-btn confirm" data-modal-close>OK</button></div>
+        `);
+        return;
+      }
+
+      openModal(`
+        <h3>Convert to text</h3>
+        <p>Review and edit the recognized text before adding it as a note.</p>
+        <textarea id="ocrResultText" rows="6"></textarea>
+        <div class="modal-actions">
+          <button class="modal-btn cancel" data-modal-close>Cancel</button>
+          <button class="modal-btn confirm" id="insertOcrTextBtn">Insert as note</button>
+        </div>
+      `, {
+        onOpen: (box) => {
+          const textarea = box.querySelector('#ocrResultText');
+          textarea.value = text;
+          textarea.focus();
+          box.querySelector('#insertOcrTextBtn').addEventListener('click', () => {
+            const finalText = textarea.value.trim();
+            if (finalText) addNoteOfType('text', { title: 'Converted note', text: finalText });
+            closeModal();
+          });
+        }
+      });
+    } catch (err) {
+      closeModal();
+      openModal(`
+        <h3>Something went wrong</h3>
+        <p>Couldn't read the handwriting. Please try again.</p>
+        <div class="modal-actions"><button class="modal-btn confirm" data-modal-close>OK</button></div>
+      `);
+    } finally {
+      btn.disabled = false;
+    }
+  });
 }
 
 /* ---------- View tabs (Notes / Flashcards / Mind Map / Review) ---------- */
@@ -2892,6 +2982,7 @@ wireUndoRedo();
 wireBrushOptions();
 wirePageBackground();
 wirePinchResize();
+wireConvertPenToText();
 wireViewTabs();
 wireFlashcards();
 wireFlashcardToolbar();
