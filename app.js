@@ -2215,33 +2215,47 @@ function shiftDescendants(node, dx, dy) {
 }
 
 function buildMindmapMarkup(nb) {
-  let lines = '';
+  // Use real pixel units so connectors aren't distorted by non-square containers
+  const W = 1000, H = 700;
+  const cx = W / 2, cy = H / 2;
+
+  let svgLines = '';
   let nodes = `<div class="mindmap-node mindmap-center" contenteditable="true" data-mind-center>${nb.mindmap.center}</div>`;
   let count = 0;
+
+  function bezierPath(x1, y1, x2, y2) {
+    // Smooth cubic bezier from parent to child
+    const dx = (x2 - x1) * 0.5;
+    return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+  }
 
   function walk(list, parentX, parentY, prefix, depth, tone) {
     list.forEach((node, i) => {
       count += 1;
       const path = prefix ? `${prefix}.${i}` : `${i}`;
       const nodeTone = depth === 0 ? MINDMAP_TONES[i % MINDMAP_TONES.length] : tone;
-      lines += `<line x1="${parentX}" y1="${parentY}" x2="${node.x}" y2="${node.y}" stroke="${nodeTone}"${depth > 0 ? ' stroke-dasharray="2.4 2.6"' : ''} />`;
+      const nx = node.x / 100 * W;
+      const ny = node.y / 100 * H;
+      const strokeW = depth === 0 ? 2 : 1.2;
+      const dashArray = depth > 0 ? 'stroke-dasharray="5 4"' : '';
+      svgLines += `<path d="${bezierPath(parentX, parentY, nx, ny)}" stroke="${nodeTone}" stroke-width="${strokeW}" fill="none" ${dashArray} stroke-linecap="round" opacity="${depth === 0 ? 0.7 : 0.45}"/>`;
       nodes += `
-        <div class="mindmap-node mindmap-branch depth-${Math.min(depth, 2)}" data-path="${path}" data-depth="${depth}" style="--x:${node.x}%; --y:${node.y}%; --tone:${nodeTone}; animation-delay:${Math.min(count * 0.03, 0.4)}s">
+        <div class="mindmap-node mindmap-branch depth-${Math.min(depth, 2)}" data-path="${path}" data-depth="${depth}" style="--x:${node.x}%; --y:${node.y}%; --tone:${nodeTone}; animation-delay:${Math.min(count * 0.04, 0.5)}s">
           <span contenteditable="true" data-mind-label="${path}">${node.label}</span>
           <button class="mindmap-node-add" data-mind-add="${path}" aria-label="Add sub-bubble" title="Add sub-bubble">+</button>
           <button class="mindmap-node-delete" data-mind-del="${path}" aria-label="Remove bubble" title="Remove">×</button>
         </div>
       `;
       if (node.children && node.children.length) {
-        walk(node.children, node.x, node.y, path, depth + 1, nodeTone);
+        walk(node.children, nx, ny, path, depth + 1, nodeTone);
       }
     });
   }
 
-  walk(nb.mindmap.branches, 50, 50, '', 0, null);
+  walk(nb.mindmap.branches, cx, cy, '', 0, null);
 
   return {
-    svg: `<svg class="mindmap-lines" id="mindmapLines" viewBox="0 0 100 100" preserveAspectRatio="none">${lines}</svg>`,
+    svg: `<svg class="mindmap-lines" id="mindmapLines" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${svgLines}</svg>`,
     nodes: nodes + (nb.mindmap.branches.length === 0 ? '<p class="mindmap-empty">Double-click anywhere, or tap +, to add your first idea.</p>' : '')
   };
 }
@@ -3031,19 +3045,24 @@ function insertImportedTextAsPages(filename, text) {
     let nextBlockTitle = null;
     let keyTermFound = null; // for flashcard capture
 
-    // Determine page tab label
-    const sectionHeading = section.heading || docTitle;
-    const tab = totalPages > 1
-      ? `${sectionHeading.slice(0, 24)} ${idx + 1}`
-      : sectionHeading.slice(0, 30);
+    // Determine page tab label — clean section heading, no appended numbers
+    const sectionHeading = section.heading
+      ? section.heading.replace(/^\d+[.)]\s*/, '').trim()
+      : docTitle;
+    // Tab: use the section heading directly, truncated for display
+    const tab = sectionHeading.slice(0, 28);
 
-    // Build mind map: each top-level section heading becomes a branch
-    if (section.heading && idx < 10) {
-      const angle = (idx / Math.min(chunkedSections.length, 10)) * 360;
+    // Build mind map: each top-level section heading becomes a branch radiating from center
+    if (section.heading && idx < 12) {
+      const totalBranches = Math.min(chunkedSections.filter(s => s.heading).length, 12);
+      // Start from top (-90°) and distribute evenly, skipping a gap at the bottom
+      const startAngle = -90;
+      const spreadAngle = totalBranches <= 1 ? 0 : 330; // leave a 30° gap at bottom
+      const angle = startAngle + (idx / Math.max(totalBranches - 1, 1)) * spreadAngle;
       const rad = angle * Math.PI / 180;
-      const r = 35;
+      const r = 36;
       mindmapBranches.push({
-        label: section.heading.replace(/^\d+[.)]\s*/, ''),
+        label: section.heading.replace(/^\d+[.)]\s*/, '').slice(0, 40),
         x: Math.round(50 + r * Math.cos(rad)),
         y: Math.round(50 + r * Math.sin(rad)),
         children: []
@@ -3092,7 +3111,16 @@ function insertImportedTextAsPages(filename, text) {
 
       if (isBullet || isShortNumbered) {
         if (!currentList) {
-          const blockTitle = nextBlockTitle || (blocks.length === 0 ? 'Key Points' : 'Details');
+          // Derive a meaningful title: prefer the preceding header, then the section name, then a fallback
+          let blockTitle = nextBlockTitle;
+          if (!blockTitle) {
+            if (blocks.length === 0) {
+              blockTitle = sectionHeading || 'Key Points';
+            } else {
+              // Use first word(s) of first item as title hint
+              blockTitle = sectionHeading ? `${sectionHeading} – Notes` : 'Points';
+            }
+          }
           nextBlockTitle = null;
           const bTone = tones[blocks.length % tones.length];
           currentList = {
@@ -3103,11 +3131,11 @@ function insertImportedTextAsPages(filename, text) {
           };
           blocks.push(currentList);
         }
-        // Strip leading bullet / definition bold markers
+        // Strip leading bullet markers, numbered prefixes, AND all ** markdown bold syntax
         let itemText = trimmed
           .replace(/^[-*]\s+/, '')
           .replace(/^\d+[.)]\s+/, '')
-          .replace(/^\*\*(.+?):\*\*\s*/, '$1: '); // **Key:** → "Key:"
+          .replace(/\*\*(.+?)\*\*/g, '$1');  // **bold** → bold (everywhere in the string)
         
         currentList.items.push(itemText);
 
@@ -3117,9 +3145,22 @@ function insertImportedTextAsPages(filename, text) {
           generatedFlashcards.push({ q: `What is ${defMatch[1].trim()}?`, a: defMatch[2].trim() });
         }
         // Also add as sub-branch to current mind map branch
-        if (mindmapBranches.length > 0 && mindmapBranches[mindmapBranches.length - 1].children.length < 4) {
-          const label = itemText.split(':')[0].slice(0, 30);
-          mindmapBranches[mindmapBranches.length - 1].children.push({ label, x: 50, y: 50, children: [] });
+        // Orbit children around the parent branch position
+        if (mindmapBranches.length > 0) {
+          const parentBranch = mindmapBranches[mindmapBranches.length - 1];
+          const childIdx = parentBranch.children.length;
+          const childCount = 4;
+          const childLabel = itemText.split(':')[0].slice(0, 30);
+          // Spread children radially outward from the parent direction
+          const pAngle = Math.atan2(parentBranch.y - 50, parentBranch.x - 50);
+          const spread = Math.PI / 3;
+          const childAngle = pAngle - spread / 2 + (childIdx / Math.max(childCount - 1, 1)) * spread;
+          const cr = 18;
+          const cx2 = Math.round(Math.max(5, Math.min(95, parentBranch.x + cr * Math.cos(childAngle))));
+          const cy2 = Math.round(Math.max(5, Math.min(95, parentBranch.y + cr * Math.sin(childAngle))));
+          if (childIdx < childCount) {
+            parentBranch.children.push({ label: childLabel, x: cx2, y: cy2, children: [] });
+          }
         }
       } else {
         // Regular paragraph: close list, write to copy
@@ -3132,7 +3173,9 @@ function insertImportedTextAsPages(filename, text) {
         }
         currentList = null;
         nextBlockTitle = null;
-        copyHTML += escapeHtml(trimmed) + '<br>';
+        // Render **bold** as <strong> in paragraph text
+        const paraHtml = escapeHtml(trimmed).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        copyHTML += paraHtml + '<br>';
       }
     });
 
@@ -3306,12 +3349,21 @@ function openReadingPane(title, text) {
   
   if (!pane || !titleEl || !contentEl) return;
   
-  titleEl.textContent = title;
+  titleEl.textContent = title.replace(/\.[^.]+$/, '').replace(/[_-]/g, ' ');
   
+  // Full markdown-lite renderer
   let html = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  html = html.replace(/^# (.*?)$/gm, '<h1>$1</h1>');
+  // Headings
   html = html.replace(/^## (.*?)$/gm, '<h2>$1</h2>');
-  html = html.replace(/^### (.*?)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^# (.*?)$/gm, '<h1>$1</h1>');
+  // Bold
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // Italic
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // Bullet list items → wrap consecutive ones in <ul>
+  html = html.replace(/^[-*] (.+)$/gm, '<li>$1</li>');
+  html = html.replace(/(<li>[\s\S]+?<\/li>)(?=\n(?!<li>)|$)/g, '<ul>$1</ul>');
+  // Paragraphs
   html = html.replace(/\n\n/g, '</p><p>');
   html = html.replace(/\n/g, '<br>');
   html = `<p>${html}</p>`;
