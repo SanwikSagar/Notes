@@ -2925,12 +2925,16 @@ function insertImportedTextAsPages(filename, text) {
   const chunks = chunkText(text);
   const baseTitle = filename.replace(/\.[^.]+$/, '') || 'Imported file';
   const firstIndex = nb.pages.length;
+  const tones = ['yellow', 'blue', 'pink', 'white', 'outline'];
 
   chunks.forEach((chunk, i) => {
     const lines = chunk.split('\n');
     let copyHTML = '';
     const blocks = [];
+    const stickies = [];
     let currentList = null;
+    let nextBlockTitle = null;
+
     let title = chunks.length > 1 ? `${baseTitle} (${i + 1}/${chunks.length})` : baseTitle;
     let tab = chunks.length > 1 ? `${baseTitle} ${i + 1}` : baseTitle;
 
@@ -2942,23 +2946,54 @@ function insertImportedTextAsPages(filename, text) {
         return;
       }
 
-      // If it looks like a bullet point, extract into a neat block
+      // 1. Extract Quotes or "Note:" lines into floating tactile sticky notes!
+      if (trimmed.startsWith('> ') || trimmed.toLowerCase().startsWith('note:')) {
+        currentList = null;
+        const sTone = tones[stickies.length % tones.length];
+        const sX = 58 + (stickies.length % 3) * 8 + Math.random() * 5; // stagger 58-74%
+        const sY = 12 + (stickies.length * 18) % 65 + Math.random() * 8; // stagger vertically
+        stickies.push({
+          id: `s_imp_${Date.now()}_${stickies.length}`,
+          tone: sTone,
+          x: sX,
+          y: sY,
+          title: trimmed.toLowerCase().startsWith('note:') ? 'Note' : 'Highlight',
+          text: trimmed.replace(/^(> |Note:\s*)/i, '')
+        });
+        return;
+      }
+
+      // 2. Parse Markdown Headers
+      if (trimmed.startsWith('#')) {
+        currentList = null;
+        const headerText = escapeHtml(trimmed.replace(/^#+\s*/, ''));
+        nextBlockTitle = headerText; // Use as title if a list immediately follows
+        // Also inject it into the text flow as a styled block-span (valid inside <p>)
+        copyHTML += `<span style="display:block; font-size:1.15em; font-weight:700; color:var(--ink); margin-top:18px; margin-bottom:4px; border-bottom:1px solid rgba(0,0,0,0.06); padding-bottom:4px;">${headerText}</span>`;
+        return;
+      }
+
+      // 3. Extract bullet/numbered lists into beautiful page blocks
       if (trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.match(/^\d+\.\s/)) {
         if (!currentList) {
-          const blockTitle = copyHTML ? 'Details' : 'Key Points';
-          currentList = { type: (blocks.length % 2 === 0) ? 'list' : 'sticky', tone: 'yellow', title: blockTitle, items: [] };
+          const blockTitle = nextBlockTitle || (copyHTML ? 'Details' : 'Key Takeaways');
+          nextBlockTitle = null; // consumed
+          const bTone = tones[blocks.length % tones.length];
+          currentList = { 
+            type: (blocks.length % 2 === 0) ? 'list' : 'sticky', 
+            tone: bTone, 
+            title: blockTitle, 
+            items: [] 
+          };
           blocks.push(currentList);
         }
         currentList.items.push(trimmed.replace(/^[-*\d.]+\s*/, ''));
       } 
-      // If it looks like a header, make it a sticky title for the next bullets, or bold text
-      else if (trimmed.startsWith('#')) {
-        currentList = null;
-        copyHTML += `<b>${escapeHtml(trimmed.replace(/^#+\s*/, ''))}</b><br>`;
-      } 
-      // Otherwise regular text
+      
+      // 4. Regular paragraph text
       else {
         currentList = null;
+        nextBlockTitle = null;
         copyHTML += escapeHtml(trimmed) + '<br>';
       }
     });
@@ -2968,9 +3003,9 @@ function insertImportedTextAsPages(filename, text) {
       tab: tab,
       title: title,
       date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-      copy: copyHTML.replace(/(<br>)+$/, ''), // clean trailing breaks
+      copy: copyHTML.replace(/(<br>)+$/, ''), // trim trailing breaks
       blocks: blocks,
-      stickies: []
+      stickies: stickies
     });
   });
 
@@ -3029,10 +3064,13 @@ async function importFileAsNotes(file) {
 
 function wireFileToNotesImport() {
   const btn = document.querySelector('#importFileToNotesBtn');
+  const quickBtn = document.querySelector('#quickImportBtn');
   const fileInput = document.querySelector('#fileToNotesInput');
-  if (!btn || !fileInput) return;
+  if (!fileInput) return;
 
-  btn.addEventListener('click', () => fileInput.click());
+  if (btn) btn.addEventListener('click', () => fileInput.click());
+  if (quickBtn) quickBtn.addEventListener('click', () => fileInput.click());
+  
   fileInput.addEventListener('change', () => {
     const file = fileInput.files && fileInput.files[0];
     fileInput.value = '';
