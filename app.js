@@ -23,8 +23,22 @@ const SoundFX = (() => {
       if (!AudioCtx) return null;
       ctx = new AudioCtx();
     }
-    if (ctx.state === 'suspended') ctx.resume();
+    // Resume synchronously — if already running this is a no-op promise
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
     return ctx;
+  }
+
+  // Plays sound after ensuring the context is running (safe for first-click)
+  function playSafe(fn) {
+    const context = ensureCtx();
+    if (!context) return;
+    if (context.state === 'running') {
+      fn(context);
+    } else {
+      context.resume().then(() => fn(context)).catch(() => {});
+    }
   }
 
   function getPinkNoiseBuffer(context) {
@@ -252,97 +266,118 @@ const SoundFX = (() => {
     source.stop(now + duration);
   }
 
-  // Sticky Note: Pick up / Peel sound & WAV file placeholder
+  // Sticky Note: Pick up / Peel sound
   function stickyPeel() {
-    /* --- Placeholder for your custom sound file: ---
-    try {
-      const audio = new Audio('sounds/sticky_peel.wav');
-      audio.playbackRate = 0.97 + Math.random() * 0.06;
-      audio.volume = 0.35;
-      audio.play().catch(() => {});
-      return;
-    } catch (_) {}
-    ------------------------------------------------ */
+    playSafe((context) => {
+      const now = context.currentTime;
+      const duration = 0.12;
 
-    const context = ensureCtx();
-    if (!context) return;
-    const now = context.currentTime;
-    const duration = 0.12;
+      const source = context.createBufferSource();
+      source.buffer = getPinkNoiseBuffer(context);
 
-    const source = context.createBufferSource();
-    source.buffer = getPinkNoiseBuffer(context);
+      const filter = context.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(2800, now);
+      filter.frequency.exponentialRampToValueAtTime(1300, now + duration);
+      filter.Q.value = 0.7;
 
-    const filter = context.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(2800, now);
-    filter.frequency.exponentialRampToValueAtTime(1300, now + duration);
-    filter.Q.value = 0.7;
+      const gain = context.createGain();
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.linearRampToValueAtTime(0.12, now + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
 
-    const gain = context.createGain();
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.linearRampToValueAtTime(0.12, now + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-
-    source.connect(filter);
-    filter.connect(gain);
-    gain.connect(context.destination);
-
-    source.start(now);
-    source.stop(now + duration);
+      source.connect(filter);
+      filter.connect(gain);
+      gain.connect(context.destination);
+      source.start(now);
+      source.stop(now + duration);
+    });
   }
 
-  // Sticky Note: Drop / Stick "thwump" & WAV file placeholder
+  // Sticky Note: Drop / Stick "thwump" — uses playSafe for first-time reliability
   function stickyDrop() {
-    /* --- Placeholder for your custom sound file: ---
-    try {
-      const audio = new Audio('sounds/sticky_thwump.wav');
-      audio.playbackRate = 0.98 + Math.random() * 0.04;
-      audio.volume = 0.4;
-      audio.play().catch(() => {});
-      return;
-    } catch (_) {}
-    ------------------------------------------------ */
+    playSafe((context) => {
+      const now = context.currentTime;
 
-    const context = ensureCtx();
-    if (!context) return;
-    const now = context.currentTime;
+      // 1. Resonant paper landing thump (audible mid-low range ~280Hz -> 180Hz)
+      const osc = context.createOscillator();
+      const oscGain = context.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(320, now);
+      osc.frequency.exponentialRampToValueAtTime(160, now + 0.045);
 
-    // 1. Resonant paper landing thump (audible mid-low range ~280Hz -> 180Hz)
-    const osc = context.createOscillator();
-    const oscGain = context.createGain();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(320, now);
-    osc.frequency.exponentialRampToValueAtTime(160, now + 0.045);
+      oscGain.gain.setValueAtTime(0.0001, now);
+      oscGain.gain.linearRampToValueAtTime(0.18, now + 0.006);
+      oscGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.055);
 
-    oscGain.gain.setValueAtTime(0.0001, now);
-    oscGain.gain.linearRampToValueAtTime(0.16, now + 0.006);
-    oscGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.055);
+      osc.connect(oscGain);
+      oscGain.connect(context.destination);
+      osc.start(now);
+      osc.stop(now + 0.06);
 
-    osc.connect(oscGain);
-    oscGain.connect(context.destination);
+      // 2. Paper slap snap (tactile surface friction contact ~800-1400Hz)
+      const noise = context.createBufferSource();
+      noise.buffer = getPinkNoiseBuffer(context);
+      const filter = context.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(1100, now);
+      filter.Q.setValueAtTime(0.7, now);
 
-    osc.start(now);
-    osc.stop(now + 0.06);
+      const noiseGain = context.createGain();
+      noiseGain.gain.setValueAtTime(0.0001, now);
+      noiseGain.gain.linearRampToValueAtTime(0.22, now + 0.004);
+      noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
 
-    // 2. Paper slap snap (tactile surface friction contact ~800-1400Hz)
-    const noise = context.createBufferSource();
-    noise.buffer = getPinkNoiseBuffer(context);
-    const filter = context.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(1100, now);
-    filter.Q.setValueAtTime(0.7, now);
+      noise.connect(filter);
+      filter.connect(noiseGain);
+      noiseGain.connect(context.destination);
+      noise.start(now);
+      noise.stop(now + 0.06);
+    });
+  }
 
-    const noiseGain = context.createGain();
-    noiseGain.gain.setValueAtTime(0.0001, now);
-    noiseGain.gain.linearRampToValueAtTime(0.18, now + 0.004);
-    noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.045);
+  // Dustbin / Trash Crumple sound — uses playSafe
+  function trashDrop() {
+    playSafe((context) => {
+      const now = context.currentTime;
 
-    noise.connect(filter);
-    filter.connect(noiseGain);
-    noiseGain.connect(context.destination);
+      // 1. Paper crumple crackle (irregular noise texture, sweeping down)
+      const source = context.createBufferSource();
+      source.buffer = getPinkNoiseBuffer(context);
 
-    noise.start(now);
-    noise.stop(now + 0.05);
+      const filter = context.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(2400, now);
+      filter.frequency.exponentialRampToValueAtTime(650, now + 0.2);
+      filter.Q.value = 1.2;
+
+      const gain = context.createGain();
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.linearRampToValueAtTime(0.22, now + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
+
+      source.connect(filter);
+      filter.connect(gain);
+      gain.connect(context.destination);
+      source.start(now);
+      source.stop(now + 0.22);
+
+      // 2. Muffled thump as it hits the bin
+      const osc = context.createOscillator();
+      const oscGain = context.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(190, now + 0.04);
+      osc.frequency.exponentialRampToValueAtTime(75, now + 0.12);
+
+      oscGain.gain.setValueAtTime(0.0001, now + 0.04);
+      oscGain.gain.linearRampToValueAtTime(0.14, now + 0.05);
+      oscGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.13);
+
+      osc.connect(oscGain);
+      oscGain.connect(context.destination);
+      osc.start(now + 0.04);
+      osc.stop(now + 0.14);
+    });
   }
 
   // Keyboard typing / quick scratch
@@ -385,6 +420,7 @@ const SoundFX = (() => {
     pageTurn,
     stickyPeel,
     stickyDrop,
+    trashDrop,
     writeScratch
   };
 })();
@@ -1315,6 +1351,7 @@ function wireStickyInteractions() {
       if (trash) { trash.classList.remove('is-visible', 'is-target'); }
 
       if (droppedOnTrash) {
+        SoundFX.trashDrop();
         const id = sticky.dataset.id;
         currentPage().stickies = (currentPage().stickies || []).filter((s) => s.id !== id);
         renderPageContent();
@@ -2590,6 +2627,64 @@ function wireSearch() {
   });
 }
 
+/* Notebook Dropdown — clicking the "Biology Notes" pill in the top-left
+   opens a compact popover listing all notebooks to switch between */
+function wireNotebookDropdown() {
+  const btn = document.querySelector('#notebookDropdown');
+  if (!btn) return;
+
+  // Create a lightweight popover attached to body
+  const popover = document.createElement('div');
+  popover.id = 'notebookSwitcherMenu';
+  popover.className = 'dropdown-menu notebook-switcher-menu';
+  popover.hidden = true;
+  document.body.appendChild(popover);
+
+  function renderSwitcherList() {
+    popover.innerHTML = Object.entries(notebooks).map(([id, nb]) => `
+      <button class="nb-switch-item${id === state.notebookId ? ' is-active' : ''}" data-id="${id}">
+        <span class="dot dot-${nb.color}"></span>
+        <span>${nb.label}</span>
+      </button>
+    `).join('');
+
+    popover.querySelectorAll('.nb-switch-item').forEach((item) => {
+      item.addEventListener('click', () => {
+        switchNotebook(item.dataset.id);
+        popover.hidden = true;
+      });
+    });
+  }
+
+  btn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (!popover.hidden) {
+      popover.hidden = true;
+      btn.setAttribute('aria-expanded', 'false');
+      return;
+    }
+    renderSwitcherList();
+    popover.hidden = false;
+    btn.setAttribute('aria-expanded', 'true');
+
+    // Position below the pill button
+    const rect = btn.getBoundingClientRect();
+    popover.style.position = 'fixed';
+    popover.style.top = `${rect.bottom + 6}px`;
+    popover.style.left = `${rect.left}px`;
+    popover.style.right = 'auto';
+    popover.style.bottom = 'auto';
+    popover.style.zIndex = '60';
+    popover.style.minWidth = `${Math.max(rect.width, 160)}px`;
+  });
+
+  popover.addEventListener('click', (e) => e.stopPropagation());
+  document.addEventListener('click', () => {
+    popover.hidden = true;
+    btn.setAttribute('aria-expanded', 'false');
+  });
+}
+
 function wireMenus() {
   const shareBtn = document.querySelector('#shareBtn');
   const shareToast = document.querySelector('#shareToast');
@@ -3113,15 +3208,20 @@ function wireBrushOptions() {
   const menu = document.querySelector('#brushOptionsMenu');
   const widthInput = document.querySelector('#penWidthRange');
   const activeDot = document.querySelector('#brushActiveDot');
+  const penActiveDot = document.querySelector('#penActiveDot');
   const previewDot = document.querySelector('#brushPreviewDot');
   const widthVal = document.querySelector('#brushWidthVal');
-  const presetBtns = menu.querySelectorAll('.brush-preset-btn');
 
   // Move popover to body so fixed positioning is viewport-relative
   document.body.appendChild(menu);
 
+  // Re-query presetBtns AFTER menu is on body
+  const presetBtns = menu.querySelectorAll('.brush-preset-btn');
+
   function syncBrushUI() {
+    // Update the color dots on both the palette button and pen tool button
     if (activeDot) activeDot.style.background = brushState.color;
+    if (penActiveDot) penActiveDot.style.background = brushState.color;
     if (previewDot) {
       previewDot.style.background = brushState.color;
       const sizePx = Math.max(3, Math.min(22, brushState.width * 2.8));
@@ -3148,9 +3248,11 @@ function wireBrushOptions() {
     else menu.hidden = true;
   });
 
+  // Stop all menu interactions from bubbling to the document close listener
+  menu.addEventListener('click', (event) => event.stopPropagation());
+
   menu.querySelectorAll('.swatch').forEach((swatch) => {
-    swatch.addEventListener('click', (event) => {
-      event.stopPropagation();
+    swatch.addEventListener('click', () => {
       menu.querySelectorAll('.swatch').forEach((s) => s.classList.remove('is-active'));
       swatch.classList.add('is-active');
       brushState.color = swatch.dataset.color;
@@ -3159,14 +3261,12 @@ function wireBrushOptions() {
   });
 
   presetBtns.forEach((preset) => {
-    preset.addEventListener('click', (event) => {
-      event.stopPropagation();
+    preset.addEventListener('click', () => {
       brushState.width = parseFloat(preset.dataset.preset);
       syncBrushUI();
     });
   });
 
-  widthInput.addEventListener('click', (event) => event.stopPropagation());
   widthInput.addEventListener('input', () => {
     brushState.width = Number(widthInput.value);
     syncBrushUI();
@@ -3590,4 +3690,4 @@ wireEditableAutosave();
 wireSoundToggle();
 wireAutosave();
 wireAccountMenu();
-
+wireNotebookDropdown();
