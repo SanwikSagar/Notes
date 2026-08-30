@@ -5,10 +5,16 @@
   and full notebook management — tuned for touch on mobile/tablet.
 */
 
-/* Tiny synthesized sound effects (Web Audio, no audio files) for a page
-   turn "whoosh" and a soft pen-on-paper scratch while drawing/writing. */
+/* ASMR Sound Engine (Web Audio API)
+   Procedural Apple Pencil strokes with tap transient, continuous pink-noise
+   scratch modulated dynamically by velocity, pitch-shifted page turns,
+   and tactile sticky note peeling / dropping. */
 const SoundFX = (() => {
   let ctx = null;
+  let pinkBuffer = null;
+  let activeStroke = null;
+  let lastPos = null;
+  let lastTime = 0;
 
   function ensureCtx() {
     if (!state.soundEnabled) return null;
@@ -21,60 +27,277 @@ const SoundFX = (() => {
     return ctx;
   }
 
-  function noiseBuffer(context, duration) {
-    const buffer = context.createBuffer(1, Math.max(1, Math.floor(context.sampleRate * duration)), context.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1;
-    return buffer;
+  function getPinkNoiseBuffer(context) {
+    if (pinkBuffer && pinkBuffer.sampleRate === context.sampleRate) return pinkBuffer;
+    const bufferSize = 2 * context.sampleRate;
+    pinkBuffer = context.createBuffer(1, bufferSize, context.sampleRate);
+    const output = pinkBuffer.getChannelData(0);
+    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+    for (let i = 0; i < bufferSize; i++) {
+      const white = Math.random() * 2 - 1;
+      b0 = 0.99886 * b0 + white * 0.0555179;
+      b1 = 0.99332 * b1 + white * 0.0750759;
+      b2 = 0.96900 * b2 + white * 0.1538520;
+      b3 = 0.86650 * b3 + white * 0.3104856;
+      b4 = 0.55000 * b4 + white * 0.5329522;
+      b5 = -0.7616 * b5 - white * 0.0168980;
+      output[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
+      b6 = white * 0.115926;
+    }
+    return pinkBuffer;
   }
 
-  function pageTurn() {
+  // Initial crisp contact tap (3kHz - 8kHz)
+  function penTap() {
     const context = ensureCtx();
     if (!context) return;
-    const duration = 0.28;
     const now = context.currentTime;
 
+    const osc = context.createOscillator();
+    const gain = context.createGain();
+    osc.type = 'sine';
+    const startFreq = 4000 + Math.random() * 2500;
+    osc.frequency.setValueAtTime(startFreq, now);
+    osc.frequency.exponentialRampToValueAtTime(7500, now + 0.012);
+
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.08 + Math.random() * 0.03, now + 0.003);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.025);
+
+    osc.connect(gain);
+    gain.connect(context.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.03);
+  }
+
+  // Start continuous pencil stroke
+  function startPenStroke(x, y) {
+    penTap();
+    const context = ensureCtx();
+    if (!context) return;
+
+    if (activeStroke) endPenStroke();
+
+    const now = context.currentTime;
     const source = context.createBufferSource();
-    source.buffer = noiseBuffer(context, duration);
+    source.buffer = getPinkNoiseBuffer(context);
+    source.loop = true;
 
     const filter = context.createBiquadFilter();
     filter.type = 'bandpass';
-    filter.Q.value = 0.7;
-    filter.frequency.setValueAtTime(2200, now);
-    filter.frequency.exponentialRampToValueAtTime(500, now + duration);
+    filter.frequency.setValueAtTime(1800, now);
+    filter.Q.setValueAtTime(0.8, now);
 
     const gain = context.createGain();
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.linearRampToValueAtTime(0.16, now + 0.02);
+    gain.gain.linearRampToValueAtTime(0.02, now + 0.03);
+
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(context.destination);
+
+    source.start(now);
+
+    activeStroke = { source, filter, gain };
+    lastPos = { x, y };
+    lastTime = performance.now();
+  }
+
+  // Move pencil stroke — dynamically modulates volume & filter cutoff based on movement speed
+  function movePenStroke(x, y) {
+    if (!activeStroke) return;
+    const context = ensureCtx();
+    if (!context) return;
+
+    const now = performance.now();
+    const dt = Math.max(1, now - (lastTime || now));
+    const dx = x - (lastPos ? lastPos.x : x);
+    const dy = y - (lastPos ? lastPos.y : y);
+    const speed = Math.hypot(dx, dy) / dt;
+
+    const normalized = Math.min(speed / 2.5, 1);
+    const targetGain = 0.008 + normalized * 0.045;
+    const targetFreq = 1200 + normalized * 3200;
+
+    const audioNow = context.currentTime;
+    activeStroke.gain.gain.setTargetAtTime(targetGain, audioNow, 0.04);
+    activeStroke.filter.frequency.setTargetAtTime(targetFreq, audioNow, 0.04);
+
+    lastPos = { x, y };
+    lastTime = now;
+  }
+
+  // Quick release envelope when pen is lifted
+  function endPenStroke() {
+    if (!activeStroke) return;
+    const context = ensureCtx();
+    if (context && activeStroke.gain) {
+      const now = context.currentTime;
+      activeStroke.gain.gain.cancelScheduledValues(now);
+      activeStroke.gain.gain.linearRampToValueAtTime(0.0001, now + 0.04);
+      const s = activeStroke.source;
+      setTimeout(() => {
+        try { s.stop(); } catch (_) {}
+      }, 50);
+    }
+    activeStroke = null;
+    lastPos = null;
+  }
+
+  // Page turns with pitch-shifting (±2%) & WAV file placeholder
+  function pageTurn() {
+    /* --- Placeholder for your custom sound file: ---
+    try {
+      const audio = new Audio('sounds/page_turn.wav');
+      audio.playbackRate = 0.98 + Math.random() * 0.04; // Pitch-shift ±2%
+      audio.volume = 0.4;
+      audio.play().catch(() => {});
+      return;
+    } catch (_) {}
+    ------------------------------------------------ */
+
+    const context = ensureCtx();
+    if (!context) return;
+    const duration = 0.32;
+    const now = context.currentTime;
+
+    const pitchFactor = 0.98 + Math.random() * 0.04; // Pitch-shift ±2%
+    const startFreq = 2300 * pitchFactor;
+    const endFreq = 480 * pitchFactor;
+
+    const source = context.createBufferSource();
+    source.buffer = getPinkNoiseBuffer(context);
+
+    const filter = context.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.Q.value = 0.65;
+    filter.frequency.setValueAtTime(startFreq, now);
+    filter.frequency.exponentialRampToValueAtTime(endFreq, now + duration);
+
+    const gain = context.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(0.12, now + 0.03);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
 
     source.connect(filter);
     filter.connect(gain);
     gain.connect(context.destination);
+
     source.start(now);
     source.stop(now + duration);
   }
 
+  // Sticky Note: Pick up / Peel sound & WAV file placeholder
+  function stickyPeel() {
+    /* --- Placeholder for your custom sound file: ---
+    try {
+      const audio = new Audio('sounds/sticky_peel.wav');
+      audio.playbackRate = 0.97 + Math.random() * 0.06;
+      audio.volume = 0.35;
+      audio.play().catch(() => {});
+      return;
+    } catch (_) {}
+    ------------------------------------------------ */
+
+    const context = ensureCtx();
+    if (!context) return;
+    const now = context.currentTime;
+    const duration = 0.12;
+
+    const source = context.createBufferSource();
+    source.buffer = getPinkNoiseBuffer(context);
+
+    const filter = context.createBiquadFilter();
+    filter.type = 'highpass';
+    filter.frequency.setValueAtTime(3200, now);
+    filter.frequency.exponentialRampToValueAtTime(1400, now + duration);
+
+    const gain = context.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(0.07, now + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(context.destination);
+
+    source.start(now);
+    source.stop(now + duration);
+  }
+
+  // Sticky Note: Drop / Stick "thwump" & WAV file placeholder
+  function stickyDrop() {
+    /* --- Placeholder for your custom sound file: ---
+    try {
+      const audio = new Audio('sounds/sticky_thwump.wav');
+      audio.playbackRate = 0.98 + Math.random() * 0.04;
+      audio.volume = 0.4;
+      audio.play().catch(() => {});
+      return;
+    } catch (_) {}
+    ------------------------------------------------ */
+
+    const context = ensureCtx();
+    if (!context) return;
+    const now = context.currentTime;
+
+    const osc = context.createOscillator();
+    const oscGain = context.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(140, now);
+    osc.frequency.exponentialRampToValueAtTime(45, now + 0.08);
+
+    oscGain.gain.setValueAtTime(0.0001, now);
+    oscGain.gain.linearRampToValueAtTime(0.12, now + 0.008);
+    oscGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+
+    osc.connect(oscGain);
+    oscGain.connect(context.destination);
+
+    osc.start(now);
+    osc.stop(now + 0.1);
+
+    const noise = context.createBufferSource();
+    noise.buffer = getPinkNoiseBuffer(context);
+    const filter = context.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(800, now);
+
+    const noiseGain = context.createGain();
+    noiseGain.gain.setValueAtTime(0.05, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.06);
+
+    noise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(context.destination);
+
+    noise.start(now);
+    noise.stop(now + 0.07);
+  }
+
+  // Keyboard typing / quick scratch
   let lastScratch = 0;
   function writeScratch() {
     const now = performance.now();
-    if (now - lastScratch < 55) return;
+    if (now - lastScratch < 60) return;
     lastScratch = now;
 
     const context = ensureCtx();
     if (!context) return;
-    const duration = 0.035;
+    const duration = 0.03;
     const start = context.currentTime;
 
     const source = context.createBufferSource();
-    source.buffer = noiseBuffer(context, duration);
+    source.buffer = getPinkNoiseBuffer(context);
 
     const filter = context.createBiquadFilter();
-    filter.type = 'highpass';
-    filter.frequency.value = 2500 + Math.random() * 1500;
+    filter.type = 'bandpass';
+    filter.frequency.value = 2400 + Math.random() * 1200;
+    filter.Q.value = 1.0;
 
     const gain = context.createGain();
-    gain.gain.setValueAtTime(0.04 + Math.random() * 0.015, start);
+    gain.gain.setValueAtTime(0.025 + Math.random() * 0.01, start);
     gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
 
     source.connect(filter);
@@ -84,7 +307,17 @@ const SoundFX = (() => {
     source.stop(start + duration);
   }
 
-  return { pageTurn, writeScratch };
+  return {
+    ensureCtx,
+    penTap,
+    startPenStroke,
+    movePenStroke,
+    endPenStroke,
+    pageTurn,
+    stickyPeel,
+    stickyDrop,
+    writeScratch
+  };
 })();
 
 const notebooks = {
@@ -266,7 +499,7 @@ const state = {
   reviewFilter: 'due',
   revealed: new Set(),
   pageScale: 1,
-  soundEnabled: true
+  soundEnabled: false
 };
 
 const NOTEBOOK_COLORS = [
@@ -979,6 +1212,7 @@ function wireStickyInteractions() {
 
     const beginDrag = (clientX, clientY, pointerId) => {
       dragging = true;
+      SoundFX.stickyPeel();
       sticky.setPointerCapture(pointerId);
       // Editable text may have grabbed focus on pointerdown before the
       // move threshold was reached — drop it so the caret doesn't linger.
@@ -1018,6 +1252,7 @@ function wireStickyInteractions() {
         return;
       }
 
+      SoundFX.stickyDrop();
       const id = sticky.dataset.id;
       const data = (currentPage().stickies || []).find((s) => s.id === id);
       if (data) {
@@ -1424,6 +1659,7 @@ function setupCanvas() {
     drawing = true;
     last = pointerToCanvas(event);
     points = [last];
+    SoundFX.startPenStroke(event.clientX, event.clientY);
     canvas.setPointerCapture(event.pointerId);
   });
 
@@ -1465,7 +1701,7 @@ function setupCanvas() {
       last = point;
       if (points.length > 4) points.shift();
     });
-    SoundFX.writeScratch();
+    SoundFX.movePenStroke(event.clientX, event.clientY);
   });
 
   ['pointerup', 'pointerleave', 'pointercancel'].forEach((evt) => {
@@ -1473,6 +1709,7 @@ function setupCanvas() {
       if (drawing) {
         drawing = false;
         points = [];
+        SoundFX.endPenStroke();
         pushUndoSnapshot(pageKey, canvas.toDataURL());
       }
     });
@@ -2843,15 +3080,26 @@ function wireEditableAutosave() {
 function wireSoundToggle() {
   const btn = document.querySelector('#soundToggleBtn');
   if (!btn) return;
-  const onIcon = btn.innerHTML;
+  const onIcon = '<svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 5V4L8 9z"/><path d="M16 8a5 5 0 0 1 0 8"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>';
   const offIcon = '<svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 5V4L8 9z"/><line x1="16" y1="9" x2="21" y2="15"/><line x1="21" y1="9" x2="16" y2="15"/></svg>';
 
-  btn.addEventListener('click', () => {
-    state.soundEnabled = !state.soundEnabled;
+  const syncUI = () => {
     btn.innerHTML = state.soundEnabled ? onIcon : offIcon;
     btn.classList.toggle('is-muted', !state.soundEnabled);
     btn.setAttribute('aria-pressed', String(!state.soundEnabled));
     btn.setAttribute('aria-label', state.soundEnabled ? 'Mute sounds' : 'Unmute sounds');
+  };
+
+  syncUI();
+
+  btn.addEventListener('click', () => {
+    state.soundEnabled = !state.soundEnabled;
+    if (state.soundEnabled) {
+      SoundFX.ensureCtx();
+      SoundFX.penTap(); // Gentle feedback on enabling sound
+    }
+    syncUI();
+    saveState();
   });
 }
 
@@ -2869,7 +3117,8 @@ function saveState() {
       notebookId: state.notebookId,
       pageIndex: state.pageIndex,
       drawings: state.drawings,
-      review: state.review
+      review: state.review,
+      soundEnabled: state.soundEnabled
     }));
   } catch (err) {
     /* Storage full or unavailable (e.g. private browsing) — fail quietly,
@@ -2912,6 +3161,7 @@ function loadState() {
   if (state.pageIndex >= pageCount) state.pageIndex = Math.max(0, pageCount - 1);
   if (data.drawings && typeof data.drawings === 'object') state.drawings = data.drawings;
   if (data.review && typeof data.review === 'object') state.review = data.review;
+  if (typeof data.soundEnabled === 'boolean') state.soundEnabled = data.soundEnabled;
 }
 
 function wireAutosave() {
