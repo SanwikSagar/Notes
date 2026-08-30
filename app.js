@@ -2960,29 +2960,97 @@ async function extractDocxText(file) {
   return result.value || '';
 }
 
+// ── Parses formatted text into logical sections, each becoming a page ──
+function parseIntoSections(text) {
+  const lines = text.split('\n');
+  const sections = [];
+  let current = { heading: '', lines: [] };
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    // H1: # Title  →  major section break
+    const h1 = trimmed.match(/^#{1,2}\s+(.+)$/);
+    if (h1) {
+      if (current.lines.filter(l => l.trim()).length > 0) sections.push(current);
+      current = { heading: h1[1].trim(), lines: [] };
+    } else {
+      current.lines.push(line);
+    }
+  });
+  if (current.lines.filter(l => l.trim()).length > 0 || current.heading) {
+    sections.push(current);
+  }
+  return sections;
+}
+
 function insertImportedTextAsPages(filename, text) {
   const nb = currentNotebook();
-  
-  // Use heuristic AI formatter to infer structure before chunking
-  const formattedText = smartFormatText(text);
-  
-  const chunks = chunkText(formattedText);
-  const baseTitle = filename.replace(/\.[^.]+$/, '') || 'Imported file';
-  const firstIndex = nb.pages.length;
   const tones = ['yellow', 'blue', 'pink', 'white', 'outline'];
+  
+  // Step 1: Apply AI formatter
+  const formatted = smartFormatText(text);
+  
+  // Step 2: Parse into logical sections (each section = one page)
+  const sections = parseIntoSections(formatted);
+  
+  // Derive document title from filename
+  const docTitle = filename.replace(/\.[^.]+$/, '').replace(/[_-]/g, ' ').replace(/\s+/g, ' ').trim();
+  const firstIndex = nb.pages.length;
+  
+  // Collections for auto-generated flashcards and mindmap
+  const generatedFlashcards = [];
+  const mindmapBranches = [];
+  
+  // Step 3: Build a page for each section
+  const chunkedSections = [];
+  // Chunk each section into sub-pages if very long
+  sections.forEach((section) => {
+    const body = section.lines.join('\n');
+    const paragraphs = body.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
+    const MAX_PARAS = 6;
+    if (paragraphs.length <= MAX_PARAS) {
+      chunkedSections.push(section);
+    } else {
+      // Split into sub-pages preserving the heading on the first
+      for (let i = 0; i < paragraphs.length; i += MAX_PARAS) {
+        const slice = paragraphs.slice(i, i + MAX_PARAS);
+        const label = i === 0 ? section.heading : section.heading ? `${section.heading} (cont'd)` : '';
+        chunkedSections.push({ heading: label, lines: slice.join('\n\n').split('\n') });
+      }
+    }
+  });
 
-  chunks.forEach((chunk, i) => {
-    const lines = chunk.split('\n');
+  const totalPages = chunkedSections.length || 1;
+  
+  chunkedSections.forEach((section, idx) => {
+    const sectionLines = section.lines;
     let copyHTML = '';
     const blocks = [];
     const stickies = [];
     let currentList = null;
     let nextBlockTitle = null;
+    let keyTermFound = null; // for flashcard capture
 
-    let title = chunks.length > 1 ? `${baseTitle} (${i + 1}/${chunks.length})` : baseTitle;
-    let tab = chunks.length > 1 ? `${baseTitle} ${i + 1}` : baseTitle;
+    // Determine page tab label
+    const sectionHeading = section.heading || docTitle;
+    const tab = totalPages > 1
+      ? `${sectionHeading.slice(0, 24)} ${idx + 1}`
+      : sectionHeading.slice(0, 30);
 
-    lines.forEach((line) => {
+    // Build mind map: each top-level section heading becomes a branch
+    if (section.heading && idx < 10) {
+      const angle = (idx / Math.min(chunkedSections.length, 10)) * 360;
+      const rad = angle * Math.PI / 180;
+      const r = 35;
+      mindmapBranches.push({
+        label: section.heading.replace(/^\d+[.)]\s*/, ''),
+        x: Math.round(50 + r * Math.cos(rad)),
+        y: Math.round(50 + r * Math.sin(rad)),
+        children: []
+      });
+    }
+
+    sectionLines.forEach((line) => {
       const trimmed = line.trim();
       if (!trimmed) {
         if (copyHTML && !copyHTML.endsWith('<br><br>')) copyHTML += '<br><br>';
@@ -2990,75 +3058,114 @@ function insertImportedTextAsPages(filename, text) {
         return;
       }
 
-      // 1. Extract Quotes or "Note:" lines into floating tactile sticky notes!
-      if (trimmed.startsWith('> ') || trimmed.toLowerCase().startsWith('note:')) {
+      // Blockquotes / Note: lines → floating sticky
+      if (trimmed.startsWith('> ') || /^note:/i.test(trimmed)) {
         currentList = null;
         const sTone = tones[stickies.length % tones.length];
-        const sX = 58 + (stickies.length % 3) * 8 + Math.random() * 5; // stagger 58-74%
-        const sY = 12 + (stickies.length * 18) % 65 + Math.random() * 8; // stagger vertically
         stickies.push({
           id: `s_imp_${Date.now()}_${stickies.length}`,
           tone: sTone,
-          x: sX,
-          y: sY,
-          title: trimmed.toLowerCase().startsWith('note:') ? 'Note' : 'Highlight',
+          x: 58 + (stickies.length % 3) * 8 + Math.random() * 4,
+          y: 12 + (stickies.length * 22) % 60 + Math.random() * 6,
+          title: /^note:/i.test(trimmed) ? 'Note' : 'Highlight',
           text: trimmed.replace(/^(> |Note:\s*)/i, '')
         });
         return;
       }
 
-      // 2. Parse Markdown Headers
+      // Markdown H1/H2 headings
       if (trimmed.startsWith('#')) {
         currentList = null;
+        const headingLevel = (trimmed.match(/^#+/) || [''])[0].length;
         const headerText = escapeHtml(trimmed.replace(/^#+\s*/, ''));
-        nextBlockTitle = headerText; // Use as title if a list immediately follows
-        // Also inject it into the text flow as a styled block-span (valid inside <p>)
-        copyHTML += `<span style="display:block; font-size:1.15em; font-weight:700; color:var(--ink); margin-top:18px; margin-bottom:4px; border-bottom:1px solid rgba(0,0,0,0.06); padding-bottom:4px;">${headerText}</span>`;
+        nextBlockTitle = headerText;
+        const fontSize = headingLevel === 1 ? '1.2em' : '1.05em';
+        const marginTop = headingLevel === 1 ? '22px' : '14px';
+        copyHTML += `<span style="display:block; font-size:${fontSize}; font-weight:700; color:var(--ink); margin-top:${marginTop}; margin-bottom:4px; border-bottom:1px solid rgba(0,0,0,0.08); padding-bottom:3px;">${headerText}</span>`;
         return;
       }
 
-      // 3. Extract bullet/numbered lists into beautiful page blocks
+      // Bullet / definition items → structured blocks
       const isBullet = trimmed.startsWith('- ') || trimmed.startsWith('* ');
-      const isNumbered = trimmed.match(/^\d+\.\s/) && trimmed.length < 150;
-      
-      if (isBullet || isNumbered) {
+      // Only treat short (< 180 chars) numbered lines as list items
+      const isShortNumbered = /^\d+[.)]\s/.test(trimmed) && trimmed.length < 180;
+
+      if (isBullet || isShortNumbered) {
         if (!currentList) {
-          const blockTitle = nextBlockTitle || (copyHTML ? 'Details' : 'Key Takeaways');
-          nextBlockTitle = null; // consumed
+          const blockTitle = nextBlockTitle || (blocks.length === 0 ? 'Key Points' : 'Details');
+          nextBlockTitle = null;
           const bTone = tones[blocks.length % tones.length];
-          currentList = { 
-            type: (blocks.length % 2 === 0) ? 'list' : 'sticky', 
-            tone: bTone, 
-            title: blockTitle, 
-            items: [] 
+          currentList = {
+            type: blocks.length % 2 === 0 ? 'list' : 'sticky',
+            tone: bTone,
+            title: blockTitle,
+            items: []
           };
           blocks.push(currentList);
         }
-        currentList.items.push(trimmed.replace(/^[-*\d.]+\s*/, ''));
-      } 
-      // 4. Regular paragraph text
-      else {
-        if (currentList && currentList.items.length > 0) {
-          // Append to the last item in the list
-          currentList.items[currentList.items.length - 1] += ' ' + trimmed.replace(/^[-*\d.]+\s*/, '');
-        } else {
-          currentList = null;
-          nextBlockTitle = null;
-          copyHTML += escapeHtml(trimmed) + '<br>';
+        // Strip leading bullet / definition bold markers
+        let itemText = trimmed
+          .replace(/^[-*]\s+/, '')
+          .replace(/^\d+[.)]\s+/, '')
+          .replace(/^\*\*(.+?):\*\*\s*/, '$1: '); // **Key:** → "Key:"
+        
+        currentList.items.push(itemText);
+
+        // Extract flashcard: definition-style items "Term: explanation"
+        const defMatch = itemText.match(/^([^:]{2,40}):\s+(.{10,})/);
+        if (defMatch && generatedFlashcards.length < 20) {
+          generatedFlashcards.push({ q: `What is ${defMatch[1].trim()}?`, a: defMatch[2].trim() });
         }
+        // Also add as sub-branch to current mind map branch
+        if (mindmapBranches.length > 0 && mindmapBranches[mindmapBranches.length - 1].children.length < 4) {
+          const label = itemText.split(':')[0].slice(0, 30);
+          mindmapBranches[mindmapBranches.length - 1].children.push({ label, x: 50, y: 50, children: [] });
+        }
+      } else {
+        // Regular paragraph: close list, write to copy
+        if (currentList && currentList.items.length > 0) {
+          // Continuation — append to last item if short
+          if (trimmed.length < 120) {
+            currentList.items[currentList.items.length - 1] += ' ' + trimmed;
+            return;
+          }
+        }
+        currentList = null;
+        nextBlockTitle = null;
+        copyHTML += escapeHtml(trimmed) + '<br>';
       }
     });
 
+    // Determine a clean, relevant page title
+    const cleanHeading = section.heading
+      ? section.heading.replace(/^\d+[.)]\s*/, '').trim()
+      : (idx === 0 ? docTitle : `${docTitle} (cont'd)`);
+
     nb.pages.push({
-      id: `import${Date.now()}${i}`,
-      tab: tab,
-      title: title,
+      id: `import${Date.now()}${idx}`,
+      tab: tab.replace(/_/g, ' '),
+      title: cleanHeading || docTitle,
       date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-      copy: copyHTML.replace(/(<br>)+$/, ''), // trim trailing breaks
-      blocks: blocks,
-      stickies: stickies
+      copy: copyHTML.replace(/(<br>)+$/, ''),
+      blocks,
+      stickies
     });
   });
+
+  // Step 4: Inject auto-generated flashcards
+  if (generatedFlashcards.length > 0) {
+    nb.flashcards = (nb.flashcards || []).concat(generatedFlashcards);
+    // Reset review cache so new cards appear
+    delete state.review[state.notebookId];
+    state.flashcardIndex = 0;
+    renderFlashcard();
+  }
+
+  // Step 5: Inject auto-generated mind map if it doesn't already have branches
+  if (mindmapBranches.length > 0 && (nb.mindmap.branches || []).length === 0) {
+    nb.mindmap = { center: docTitle, branches: mindmapBranches };
+    renderMindmap();
+  }
 
   renderPageTabs();
   goToPage(firstIndex, 'next');
