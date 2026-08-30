@@ -2902,12 +2902,24 @@ function chunkText(text, maxLen = 1200) {
 
 function smartFormatText(text) {
   let out = text;
-  // 1. Detect implicit headers (e.g. "2. Main Organs") and make them real headers
-  out = out.replace(/([.?!]\s+|^)(\d+\.\s+[A-Z][^.!?:]{2,50})/g, '$1\n\n# $2\n\n');
-  // 2. Detect definitions/key terms (e.g. "Stomach: The stomach stores") and make them bullet points
-  out = out.replace(/([.?!]\s+|^)([A-Z][A-Za-z\s-]{2,25}:\s)/g, '$1\n- $2');
-  // 3. Clean up multiple blank lines
+  
+  // Clean up strange PDF spacing
+  out = out.replace(/[ \t]+/g, ' ');
+
+  // 1. Convert numbered lines to headers (e.g., "1. Introduction")
+  // Only matches if the entire line is short (< 80 chars) OR if we match up to the first period
+  out = out.replace(/(^|\n)(\d+(?:\.\d+)*\.\s+[^\n.]{2,80})(?:\n|$)/g, '$1\n# $2\n\n');
+  
+  // 2. Definitions: "Mouth: Digestion begins" -> "- **Mouth:** Digestion begins"
+  // Matches start of line or sentence
+  out = out.replace(/(^|\n)([A-Z][a-zA-Z\s-]{2,30}):\s+/g, '$1\n- **$2:** ');
+
+  // 3. Ensure bullets are treated correctly
+  out = out.replace(/(^|\n)([-*]\s+[A-Z])/g, '$1\n$2');
+
+  // 4. Clean up multiple empty lines
   out = out.replace(/\n{3,}/g, '\n\n');
+  
   return out.trim();
 }
 
@@ -3001,7 +3013,10 @@ function insertImportedTextAsPages(filename, text) {
       }
 
       // 3. Extract bullet/numbered lists into beautiful page blocks
-      if (trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.match(/^\d+\.\s/)) {
+      const isBullet = trimmed.startsWith('- ') || trimmed.startsWith('* ');
+      const isNumbered = trimmed.match(/^\d+\.\s/) && trimmed.length < 150;
+      
+      if (isBullet || isNumbered) {
         if (!currentList) {
           const blockTitle = nextBlockTitle || (copyHTML ? 'Details' : 'Key Takeaways');
           nextBlockTitle = null; // consumed
@@ -3016,12 +3031,16 @@ function insertImportedTextAsPages(filename, text) {
         }
         currentList.items.push(trimmed.replace(/^[-*\d.]+\s*/, ''));
       } 
-      
       // 4. Regular paragraph text
       else {
-        currentList = null;
-        nextBlockTitle = null;
-        copyHTML += escapeHtml(trimmed) + '<br>';
+        if (currentList && currentList.items.length > 0) {
+          // Append to the last item in the list
+          currentList.items[currentList.items.length - 1] += ' ' + trimmed.replace(/^[-*\d.]+\s*/, '');
+        } else {
+          currentList = null;
+          nextBlockTitle = null;
+          copyHTML += escapeHtml(trimmed) + '<br>';
+        }
       }
     });
 
