@@ -2922,9 +2922,9 @@ function smartFormatText(text) {
 
   // 0. Unwrap hard-wrapped lines (PDF artifacts)
   // If a line ends with a normal word character (no punctuation) and the next line starts with a lowercase letter, join them with a space.
-  out = out.replace(/([a-zA-Z,])\n([a-z])/g, '$1 $2');
+  out = out.replace(/([a-zA-Z,])\s*\n\s*([a-z])/g, '$1 $2');
   // If a line ends in a hyphen, remove the hyphen and join
-  out = out.replace(/([a-zA-Z])-\n([a-zA-Z])/g, '$1$2');
+  out = out.replace(/([a-zA-Z])-\s*\n\s*([a-zA-Z])/g, '$1$2');
 
   // Aggressively break sentences if it's a wall of text
   if (out.split('\n').length < (out.length / 80)) {
@@ -2932,7 +2932,8 @@ function smartFormatText(text) {
   }
 
   // 1. Force headers for numbered sections (e.g., "1. Introduction" or "2. Main Organs")
-  out = out.replace(/(?:^|\n|\s+)(\d+(?:\.\d+)*\.\s+[A-Z][^.!?:]{2,60})(?:\s|$)/g, '\n\n# $1\n\n');
+  // MUST be on its own line (or only followed by spaces before newline), otherwise it rips text out of paragraphs
+  out = out.replace(/(?:^|\n)(\d+(?:\.\d+)*\.\s+[A-Z][^.!?:]{2,60})\s*(?:\n|$)/g, '\n\n# $1\n\n');
   
   // 1b. Force headers for ALL CAPS lines (often titles)
   out = out.replace(/(?:^|\n)([A-Z\s]{5,40})(?:\n|$)/g, (match, p1) => {
@@ -2985,6 +2986,31 @@ async function extractDocxText(file) {
   const buffer = await file.arrayBuffer();
   const result = await mammoth.extractRawText({ arrayBuffer: buffer });
   return result.value || '';
+}
+
+async function extractPptxText(file) {
+  if (typeof JSZip === 'undefined') throw new Error('PPTX_ENGINE_UNAVAILABLE');
+  const zip = new JSZip();
+  await zip.loadAsync(file);
+  
+  let slideTexts = [];
+  const slideFiles = Object.keys(zip.files).filter(name => /^ppt\/slides\/slide\d+\.xml$/.test(name));
+  
+  slideFiles.sort((a, b) => {
+    const numA = parseInt(a.match(/slide(\d+)/)[1], 10);
+    const numB = parseInt(b.match(/slide(\d+)/)[1], 10);
+    return numA - numB;
+  });
+  
+  for (const filename of slideFiles) {
+    const xmlText = await zip.files[filename].async('text');
+    const matches = xmlText.match(/<a:t[^>]*>(.*?)<\/a:t>/g) || [];
+    // A slide is treated as a page block, so join its fragments
+    const slideText = matches.map(m => m.replace(/<\/?a:t[^>]*>/g, '').trim()).filter(Boolean).join('\n');
+    if (slideText) slideTexts.push(slideText);
+  }
+  
+  return slideTexts.join('\n\n');
 }
 
 // ── Parses formatted text into logical sections, each becoming a page ──
@@ -3041,7 +3067,7 @@ function insertImportedTextAsPages(filename, text) {
       // Split into sub-pages preserving the heading on the first
       for (let i = 0; i < paragraphs.length; i += MAX_PARAS) {
         const slice = paragraphs.slice(i, i + MAX_PARAS);
-        const label = i === 0 ? section.heading : section.heading ? `${section.heading} (cont'd)` : '';
+        const label = section.heading;
         chunkedSections.push({ heading: label, lines: slice.join('\n\n').split('\n') });
       }
     }
@@ -3196,7 +3222,7 @@ function insertImportedTextAsPages(filename, text) {
     // Determine a clean, relevant page title
     const cleanHeading = section.heading
       ? section.heading.replace(/^\d+[.)]\s*/, '').trim()
-      : (idx === 0 ? docTitle : `${docTitle} (cont'd)`);
+      : docTitle;
 
     nb.pages.push({
       id: `import${Date.now()}${idx}`,
@@ -3245,8 +3271,10 @@ async function importFileAsNotes(file) {
       text = await extractPdfText(file);
     } else if (ext === 'docx') {
       text = await extractDocxText(file);
-    } else if (ext === 'doc') {
-      throw new Error('DOC_UNSUPPORTED');
+    } else if (ext === 'pptx') {
+      text = await extractPptxText(file);
+    } else if (ext === 'doc' || ext === 'ppt') {
+      throw new Error('OLD_FORMAT_UNSUPPORTED');
     } else {
       throw new Error('UNSUPPORTED_TYPE');
     }
@@ -3264,10 +3292,10 @@ async function importFileAsNotes(file) {
     insertImportedTextAsPages(name, text);
   } catch (err) {
     closeModal();
-    const message = err && err.message === 'DOC_UNSUPPORTED'
-      ? "Old .doc files aren't supported in the browser — save it as .docx and try again."
+    const message = err && err.message === 'OLD_FORMAT_UNSUPPORTED'
+      ? "Old .doc / .ppt files aren't supported in the browser — save as .docx / .pptx and try again."
       : err && err.message === 'UNSUPPORTED_TYPE'
-        ? 'Only PDF, Word (.docx), .txt, and .md files can be imported.'
+        ? 'Only PDF, Word (.docx), PowerPoint (.pptx), .txt, and .md files can be imported.'
         : "Couldn't read that file. Please try again.";
     openModal(`
       <h3>Import failed</h3>
@@ -3339,11 +3367,37 @@ async function handleFileForReadingPane(file) {
     }
     return;
   }
+
+  if (ext === 'docx') {
+    openModal('<h3>Reading Word Document...</h3><p>Extracting text from DOCX.</p>');
+    try {
+      const text = await extractDocxText(file);
+      closeModal();
+      openReadingPane(file.name, smartFormatText(text));
+    } catch (e) {
+      closeModal();
+      openModal('<h3>DOCX Error</h3><p>Could not extract text from this DOCX. Ensure it is a valid .docx file (older .doc files are not supported).</p><div class="modal-actions"><button class="modal-btn confirm" data-modal-close>OK</button></div>');
+    }
+    return;
+  }
+
+  if (ext === 'pptx') {
+    openModal('<h3>Reading PowerPoint...</h3><p>Extracting text from PPTX.</p>');
+    try {
+      const text = await extractPptxText(file);
+      closeModal();
+      openReadingPane(file.name, smartFormatText(text));
+    } catch (e) {
+      closeModal();
+      openModal('<h3>PPTX Error</h3><p>Could not extract text from this PPTX.</p><div class="modal-actions"><button class="modal-btn confirm" data-modal-close>OK</button></div>');
+    }
+    return;
+  }
   
   if (!['txt', 'md', 'markdown'].includes(ext)) {
     openModal(`
       <h3>Unsupported file type</h3>
-      <p>Only .txt, .md, and .pdf files are supported for the reading pane currently.</p>
+      <p>Only .txt, .md, .pdf, .docx, and .pptx files are supported for the reading pane currently.</p>
       <div class="modal-actions"><button class="modal-btn confirm" data-modal-close>OK</button></div>
     `);
     return;
