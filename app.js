@@ -3236,8 +3236,8 @@ function wireReadingPaneExtraction() {
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
       // Ensure the button isn't off-screen to the left
-      btn.style.left = \`\${Math.max(10, rect.right + 10)}px\`;
-      btn.style.top = \`\${Math.max(10, rect.top - 40)}px\`;
+      btn.style.left = `${Math.max(10, rect.right + 10)}px`;
+      btn.style.top = `${Math.max(10, rect.top - 40)}px`;
       btn.hidden = false;
     } else {
       btn.hidden = true;
@@ -3262,7 +3262,7 @@ function wireReadingPaneExtraction() {
     const tone = tones[page.stickies.length % tones.length];
 
     const sticky = {
-      id: \`s_ext_\${Date.now()}\`,
+      id: `s_ext_${Date.now()}`,
       tone: tone,
       x: 30 + Math.random() * 40,
       y: 20 + Math.random() * 40,
