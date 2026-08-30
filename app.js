@@ -2927,13 +2927,49 @@ function insertImportedTextAsPages(filename, text) {
   const firstIndex = nb.pages.length;
 
   chunks.forEach((chunk, i) => {
+    const lines = chunk.split('\n');
+    let copyHTML = '';
+    const blocks = [];
+    let currentList = null;
+    let title = chunks.length > 1 ? `${baseTitle} (${i + 1}/${chunks.length})` : baseTitle;
+    let tab = chunks.length > 1 ? `${baseTitle} ${i + 1}` : baseTitle;
+
+    lines.forEach((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        if (copyHTML && !copyHTML.endsWith('<br><br>')) copyHTML += '<br><br>';
+        currentList = null;
+        return;
+      }
+
+      // If it looks like a bullet point, extract into a neat block
+      if (trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.match(/^\d+\.\s/)) {
+        if (!currentList) {
+          const blockTitle = copyHTML ? 'Details' : 'Key Points';
+          currentList = { type: (blocks.length % 2 === 0) ? 'list' : 'sticky', tone: 'yellow', title: blockTitle, items: [] };
+          blocks.push(currentList);
+        }
+        currentList.items.push(trimmed.replace(/^[-*\d.]+\s*/, ''));
+      } 
+      // If it looks like a header, make it a sticky title for the next bullets, or bold text
+      else if (trimmed.startsWith('#')) {
+        currentList = null;
+        copyHTML += `<b>${escapeHtml(trimmed.replace(/^#+\s*/, ''))}</b><br>`;
+      } 
+      // Otherwise regular text
+      else {
+        currentList = null;
+        copyHTML += escapeHtml(trimmed) + '<br>';
+      }
+    });
+
     nb.pages.push({
       id: `import${Date.now()}${i}`,
-      tab: chunks.length > 1 ? `${baseTitle} ${i + 1}` : baseTitle,
-      title: chunks.length > 1 ? `${baseTitle} (${i + 1}/${chunks.length})` : baseTitle,
-      date: 'Imported',
-      copy: textToPageCopyHtml(chunk),
-      blocks: [],
+      tab: tab,
+      title: title,
+      date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+      copy: copyHTML.replace(/(<br>)+$/, ''), // clean trailing breaks
+      blocks: blocks,
       stickies: []
     });
   });
@@ -3168,16 +3204,22 @@ function wireFormatBar() {
    would get silently clipped by that scroll container. */
 function openRailPopover(button, menu) {
   menu.hidden = false;
+  // Pin to a known width BEFORE measuring height so the vertical-centre
+  // calculation uses the correct rendered height (not a narrow collapsed one).
+  menu.style.position = 'fixed';
+  menu.style.width = '220px';
+  menu.style.left = 'auto';
+  menu.style.right = `${window.innerWidth - button.getBoundingClientRect().left + 10}px`;
+  menu.style.top = '-9999px'; // off-screen first so height measurement is accurate
+  menu.style.bottom = 'auto';
+  menu.style.zIndex = '40';
+
+  // Now measure the correct rendered height
   const rect = button.getBoundingClientRect();
   const menuRect = menu.getBoundingClientRect();
   let top = rect.top + rect.height / 2 - menuRect.height / 2;
   top = Math.max(8, Math.min(window.innerHeight - menuRect.height - 8, top));
-  menu.style.position = 'fixed';
   menu.style.top = `${top}px`;
-  menu.style.bottom = 'auto';
-  menu.style.left = 'auto';
-  menu.style.right = `${window.innerWidth - rect.left + 10}px`;
-  menu.style.zIndex = '40';
 }
 
 /* Top-toolbar popovers (account, more-options) — same fixed-position trick

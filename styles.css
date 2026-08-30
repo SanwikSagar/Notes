@@ -370,7 +370,7 @@ svg {
   z-index: 20;
 }
 
-.dropdown-menu button {
+.dropdown-menu button:not(.swatch) {
   border: 0;
   background: none;
   text-align: left;
@@ -432,7 +432,7 @@ svg {
   bottom: calc(100% + 10px);
   left: 0;
   right: auto;
-  min-width: 190px;
+  min-width: 200px;
 }
 
 /* Rail popovers open to the left of the vertical rail (which sits at the
@@ -444,6 +444,9 @@ svg {
   left: auto;
   right: calc(100% + 10px);
   transform: translateY(-50%);
+  /* Wide enough for 6 colour swatches + padding in one row */
+  min-width: 220px;
+  width: 220px;
 }
 
 .bg-menu button.is-active {
@@ -466,8 +469,9 @@ svg {
 
 .swatch-row {
   display: flex;
-  gap: 6px;
-  padding: 0 4px;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 2px 4px 4px;
 }
 
 .swatch {
@@ -1127,37 +1131,37 @@ svg {
 /* Drop zone for deleting stickies/notes — fixed top-center of the viewport
    so it never collides with floating toolbars or bottom navigation;
    hidden until a drag starts, then glides in smoothly from the top. */
+/* Drop zone for deleting stickies/notes — fixed bottom-right of the viewport */
 .trash-zone {
   position: fixed;
-  top: 18px;
-  left: 50%;
-  transform: translateX(-50%) translateY(-24px);
+  bottom: 84px;
+  right: 16px;
   z-index: 50;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 20px;
-  border-radius: 26px;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
   background: var(--paper);
-  border: 1.5px dashed #b3454f;
+  border: 2px dashed #b3454f;
   color: #b3454f;
-  font-size: 13px;
-  font-weight: 600;
   cursor: default;
   opacity: 0;
   pointer-events: none;
+  transform: scale(0.8);
   transition: opacity 0.2s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.15s ease, border-color 0.15s ease;
   box-shadow: 0 10px 30px rgba(58, 51, 39, 0.22);
 }
 
 .trash-zone svg {
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
 }
 
 .trash-zone.is-visible {
   opacity: 1;
-  transform: translateX(-50%) translateY(0);
+  transform: scale(1);
 }
 
 .trash-zone.is-target {
@@ -1165,7 +1169,7 @@ svg {
   border-style: solid;
   border-color: #b3454f;
   color: #982c35;
-  transform: translateX(-50%) translateY(0) scale(1.08);
+  transform: scale(1.15);
   box-shadow: 0 14px 40px rgba(179, 69, 79, 0.32);
 }
 
