@@ -206,8 +206,12 @@
               <button class="tool-btn" data-tool="pen" title="Pen">
                 <svg viewBox="0 0 24 24"><path d="M4 20l1-5 11-11 4 4-11 11z"/><path d="M14 5l4 4"/></svg>
               </button>
-              <button class="tool-btn" data-tool="highlighter" title="Highlighter">
-                <svg viewBox="0 0 24 24"><path d="M9 15l-4 4H3v-2l4-4z"/><path d="M8 12l4-9 8 4-9 4z"/></svg>
+              <button class="tool-btn" data-tool="highlighter" title="Highlighter marker">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="m14 3 6 6-9 9H5v-6l9-9z"/>
+                  <path d="m11 6 6 6"/>
+                  <path d="M4 20h4"/>
+                </svg>
               </button>
               <button class="tool-btn" data-tool="eraser" title="Eraser">
                 <svg viewBox="0 0 24 24"><path d="M4 15l8-8 7 7-6 6H8z"/><line x1="6" y1="20" x2="20" y2="20"/></svg>
@@ -217,18 +221,31 @@
               </button>
               <div class="menu-wrap">
                 <button class="tool-btn" id="brushOptionsBtn" aria-haspopup="true" title="Pen color &amp; thickness">
+                  <span class="brush-active-dot" id="brushActiveDot" style="background: #3a3327;"></span>
                   <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="8" r="1.3" fill="currentColor" stroke="none"/><circle cx="8.5" cy="13" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="13" r="1.3" fill="currentColor" stroke="none"/></svg>
                 </button>
                 <div class="dropdown-menu brush-menu rail-menu" id="brushOptionsMenu" hidden>
-                  <p class="brush-menu-label">Pen color</p>
+                  <p class="brush-menu-label">Pen Color</p>
                   <div class="swatch-row">
-                    <button class="swatch is-active" data-color="#3a3327" style="--sw:#3a3327" aria-label="Ink"></button>
-                    <button class="swatch" data-color="#b3454f" style="--sw:#b3454f" aria-label="Rose"></button>
-                    <button class="swatch" data-color="#5088c9" style="--sw:#5088c9" aria-label="Blue"></button>
-                    <button class="swatch" data-color="#5a9d6f" style="--sw:#5a9d6f" aria-label="Green"></button>
-                    <button class="swatch" data-color="#d9822f" style="--sw:#d9822f" aria-label="Amber"></button>
+                    <button class="swatch is-active" data-color="#3a3327" style="--sw:#3a3327" aria-label="Ink" title="Ink"></button>
+                    <button class="swatch" data-color="#b3454f" style="--sw:#b3454f" aria-label="Rose" title="Rose"></button>
+                    <button class="swatch" data-color="#5088c9" style="--sw:#5088c9" aria-label="Sky Blue" title="Sky Blue"></button>
+                    <button class="swatch" data-color="#5a9d6f" style="--sw:#5a9d6f" aria-label="Sage Green" title="Sage Green"></button>
+                    <button class="swatch" data-color="#d9822f" style="--sw:#d9822f" aria-label="Warm Amber" title="Warm Amber"></button>
+                    <button class="swatch" data-color="#8e66b8" style="--sw:#8e66b8" aria-label="Lavender" title="Lavender"></button>
                   </div>
-                  <p class="brush-menu-label">Pen thickness</p>
+                  
+                  <div class="brush-preview-wrap">
+                    <div class="brush-preview-line"><div class="brush-preview-dot" id="brushPreviewDot"></div></div>
+                    <span class="brush-width-val" id="brushWidthVal">2.4 px</span>
+                  </div>
+
+                  <p class="brush-menu-label">Pen Thickness</p>
+                  <div class="brush-presets">
+                    <button type="button" class="brush-preset-btn" data-preset="1.5">Fine</button>
+                    <button type="button" class="brush-preset-btn is-active" data-preset="2.4">Medium</button>
+                    <button type="button" class="brush-preset-btn" data-preset="5.0">Bold</button>
+                  </div>
                   <input type="range" id="penWidthRange" min="1" max="10" value="2.4" step="0.2">
                 </div>
               </div>
@@ -258,8 +275,14 @@
               <button class="icon-btn" id="redoButton" aria-label="Redo" title="Redo">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg>
               </button>
-              <button class="icon-btn" id="clearDrawingButton" aria-label="Clear drawing" title="Clear drawing">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17v-3.5L14 2.5a1.5 1.5 0 0 1 2 0l2 2a1.5 1.5 0 0 1 0 2L7 18H3.5"/><path d="M13 4.5 17.5 9"/><path d="M3 21h18"/></svg>
+              <button class="icon-btn" id="clearDrawingButton" aria-label="Clear page drawings" title="Clear all drawings on this page">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 6h18"/>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+                  <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                  <line x1="10" y1="11" x2="10" y2="17"/>
+                  <line x1="14" y1="11" x2="14" y2="17"/>
+                </svg>
               </button>
             </div>
 
@@ -376,6 +399,8 @@
       <svg viewBox="0 0 24 24" width="16" height="16"><text x="1" y="8.5" font-size="7" stroke="none" fill="currentColor">1.</text><text x="1" y="14.5" font-size="7" stroke="none" fill="currentColor">2.</text><text x="1" y="20.5" font-size="7" stroke="none" fill="currentColor">3.</text><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/></svg>
     </button>
   </div>
+
+  <div class="tool-preview-cursor" id="toolCursorPreview" aria-hidden="true"></div>
 
   <script src="auth.js"></script>
   <script src="app.js"></script>

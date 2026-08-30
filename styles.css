@@ -429,9 +429,88 @@ svg {
   border: 2px solid transparent;
   background: var(--sw);
   padding: 0;
+  cursor: pointer;
+  transition: transform 0.1s ease, border-color 0.1s ease;
+}
+
+.swatch:hover {
+  transform: scale(1.15);
 }
 
 .swatch.is-active {
+  border-color: var(--ink);
+  transform: scale(1.1);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85);
+}
+
+.brush-active-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  pointer-events: none;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.25);
+}
+
+.brush-preview-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 8px 4px 6px;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: var(--radius-sm);
+}
+
+.brush-preview-line {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 24px;
+}
+
+.brush-preview-dot {
+  border-radius: 50%;
+  background: #3a3327;
+  transition: width 0.1s ease, height 0.1s ease, background 0.1s ease;
+}
+
+.brush-width-val {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.brush-presets {
+  display: flex;
+  gap: 4px;
+  padding: 0 4px 6px;
+}
+
+.brush-preset-btn {
+  flex: 1;
+  padding: 4px 0;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--muted);
+  text-align: center;
+}
+
+.brush-preset-btn:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--ink);
+}
+
+.brush-preset-btn.is-active {
+  background: var(--ink);
+  color: var(--paper);
   border-color: var(--ink);
 }
 
@@ -439,6 +518,42 @@ svg {
   width: calc(100% - 8px);
   margin: 2px 4px 4px;
   accent-color: var(--maths);
+}
+
+/* Tool Cursor Effective Area Preview */
+.tool-preview-cursor {
+  position: fixed;
+  pointer-events: none;
+  z-index: 9999;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.tool-preview-cursor.is-visible {
+  opacity: 1;
+}
+
+.tool-preview-cursor.is-pen {
+  border-radius: 50%;
+  background: var(--tool-color, #3a3327);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.8), 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.tool-preview-cursor.is-eraser {
+  border-radius: 50%;
+  border: 1.5px dashed rgba(179, 69, 79, 0.85);
+  background: rgba(255, 255, 255, 0.65);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.9), 0 4px 12px rgba(179, 69, 79, 0.18);
+  backdrop-filter: blur(1px);
+}
+
+.tool-preview-cursor.is-highlighter {
+  border-radius: 5px;
+  border: 1.5px solid rgba(217, 130, 47, 0.7);
+  background: rgba(255, 220, 80, 0.5);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.8), 0 2px 8px rgba(217, 130, 47, 0.25);
+  transform: translate(-50%, -50%) rotate(-20deg);
 }
 
 .icon-btn {

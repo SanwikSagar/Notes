@@ -6,9 +6,9 @@
 */
 
 /* ASMR Sound Engine (Web Audio API)
-   Procedural Apple Pencil strokes with tap transient, continuous pink-noise
-   scratch modulated dynamically by velocity, pitch-shifted page turns,
-   and tactile sticky note peeling / dropping. */
+   Procedural Apple Pencil strokes with natural cushioned paper contact (no harsh clicks),
+   distinctive broad felt-tip highlighter swoosh, velocity-modulated scratches,
+   pitch-shifted page turns, and tactile sticky note peel/drop audio. */
 const SoundFX = (() => {
   let ctx = null;
   let pinkBuffer = null;
@@ -47,33 +47,68 @@ const SoundFX = (() => {
     return pinkBuffer;
   }
 
-  // Initial crisp contact tap (3kHz - 8kHz)
-  function penTap() {
+  // Natural pen tip kept on paper — muted organic acoustic contact
+  function penTap(tool = 'pen') {
     const context = ensureCtx();
     if (!context) return;
     const now = context.currentTime;
 
+    // 1. Soft acoustic low-mid paper body tap (natural cushioned landing)
     const osc = context.createOscillator();
-    const gain = context.createGain();
+    const oscGain = context.createGain();
     osc.type = 'sine';
-    const startFreq = 4000 + Math.random() * 2500;
-    osc.frequency.setValueAtTime(startFreq, now);
-    osc.frequency.exponentialRampToValueAtTime(7500, now + 0.012);
 
-    gain.gain.setValueAtTime(0, now);
-    gain.gain.linearRampToValueAtTime(0.08 + Math.random() * 0.03, now + 0.003);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.025);
+    if (tool === 'highlighter') {
+      // Muted broad felt landing
+      osc.frequency.setValueAtTime(320, now);
+      osc.frequency.exponentialRampToValueAtTime(160, now + 0.018);
+      oscGain.gain.setValueAtTime(0.0001, now);
+      oscGain.gain.linearRampToValueAtTime(0.04, now + 0.003);
+      oscGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.022);
+    } else if (tool === 'eraser') {
+      // Rubbery soft landing
+      osc.frequency.setValueAtTime(260, now);
+      osc.frequency.exponentialRampToValueAtTime(120, now + 0.016);
+      oscGain.gain.setValueAtTime(0.0001, now);
+      oscGain.gain.linearRampToValueAtTime(0.035, now + 0.003);
+      oscGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.02);
+    } else {
+      // Apple Pencil / Fine pen tip touching paper fiber
+      osc.frequency.setValueAtTime(460 + Math.random() * 80, now);
+      osc.frequency.exponentialRampToValueAtTime(220, now + 0.012);
+      oscGain.gain.setValueAtTime(0.0001, now);
+      oscGain.gain.linearRampToValueAtTime(0.045, now + 0.002);
+      oscGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.016);
+    }
 
-    osc.connect(gain);
-    gain.connect(context.destination);
-
+    osc.connect(oscGain);
+    oscGain.connect(context.destination);
     osc.start(now);
-    osc.stop(now + 0.03);
+    osc.stop(now + 0.025);
+
+    // 2. Micro paper friction breath (gentle textured contact without electronic click)
+    const noise = context.createBufferSource();
+    noise.buffer = getPinkNoiseBuffer(context);
+    const filter = context.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(tool === 'highlighter' ? 950 : 1400, now);
+    filter.Q.setValueAtTime(0.8, now);
+
+    const noiseGain = context.createGain();
+    noiseGain.gain.setValueAtTime(0.0001, now);
+    noiseGain.gain.linearRampToValueAtTime(tool === 'highlighter' ? 0.018 : 0.022, now + 0.002);
+    noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.012);
+
+    noise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(context.destination);
+    noise.start(now);
+    noise.stop(now + 0.015);
   }
 
-  // Start continuous pencil stroke
-  function startPenStroke(x, y) {
-    penTap();
+  // Start continuous stroke — tailored for pen, highlighter, or eraser
+  function startPenStroke(x, y, tool = 'pen') {
+    penTap(tool);
     const context = ensureCtx();
     if (!context) return;
 
@@ -86,12 +121,26 @@ const SoundFX = (() => {
 
     const filter = context.createBiquadFilter();
     filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(1800, now);
-    filter.Q.setValueAtTime(0.8, now);
 
     const gain = context.createGain();
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.linearRampToValueAtTime(0.02, now + 0.03);
+
+    if (tool === 'highlighter') {
+      // Broad wet felt marker swoosh: softer, wider bandpass
+      filter.frequency.setValueAtTime(1100, now);
+      filter.Q.setValueAtTime(0.45, now);
+      gain.gain.linearRampToValueAtTime(0.025, now + 0.03);
+    } else if (tool === 'eraser') {
+      // Rubbery paper rub
+      filter.frequency.setValueAtTime(750, now);
+      filter.Q.setValueAtTime(0.6, now);
+      gain.gain.linearRampToValueAtTime(0.03, now + 0.03);
+    } else {
+      // Fine pen / pencil stroke
+      filter.frequency.setValueAtTime(1800, now);
+      filter.Q.setValueAtTime(0.85, now);
+      gain.gain.linearRampToValueAtTime(0.02, now + 0.03);
+    }
 
     source.connect(filter);
     filter.connect(gain);
@@ -99,12 +148,12 @@ const SoundFX = (() => {
 
     source.start(now);
 
-    activeStroke = { source, filter, gain };
+    activeStroke = { source, filter, gain, tool };
     lastPos = { x, y };
     lastTime = performance.now();
   }
 
-  // Move pencil stroke — dynamically modulates volume & filter cutoff based on movement speed
+  // Move stroke — dynamically modulates volume & filter cutoff based on movement speed & tool type
   function movePenStroke(x, y) {
     if (!activeStroke) return;
     const context = ensureCtx();
@@ -114,15 +163,30 @@ const SoundFX = (() => {
     const dt = Math.max(1, now - (lastTime || now));
     const dx = x - (lastPos ? lastPos.x : x);
     const dy = y - (lastPos ? lastPos.y : y);
-    const speed = Math.hypot(dx, dy) / dt;
+    const speed = Math.hypot(dx, dy) / dt; // px / ms
 
     const normalized = Math.min(speed / 2.5, 1);
-    const targetGain = 0.008 + normalized * 0.045;
-    const targetFreq = 1200 + normalized * 3200;
-
     const audioNow = context.currentTime;
-    activeStroke.gain.gain.setTargetAtTime(targetGain, audioNow, 0.04);
-    activeStroke.filter.frequency.setTargetAtTime(targetFreq, audioNow, 0.04);
+
+    if (activeStroke.tool === 'highlighter') {
+      // Smooth, wide felt-tip glide
+      const targetGain = 0.012 + normalized * 0.05;
+      const targetFreq = 850 + normalized * 900;
+      activeStroke.gain.gain.setTargetAtTime(targetGain, audioNow, 0.04);
+      activeStroke.filter.frequency.setTargetAtTime(targetFreq, audioNow, 0.04);
+    } else if (activeStroke.tool === 'eraser') {
+      // Eraser friction
+      const targetGain = 0.01 + normalized * 0.055;
+      const targetFreq = 600 + normalized * 800;
+      activeStroke.gain.gain.setTargetAtTime(targetGain, audioNow, 0.04);
+      activeStroke.filter.frequency.setTargetAtTime(targetFreq, audioNow, 0.04);
+    } else {
+      // Pencil / pen dynamic scratch
+      const targetGain = 0.008 + normalized * 0.042;
+      const targetFreq = 1400 + normalized * 2600;
+      activeStroke.gain.gain.setTargetAtTime(targetGain, audioNow, 0.04);
+      activeStroke.filter.frequency.setTargetAtTime(targetFreq, audioNow, 0.04);
+    }
 
     lastPos = { x, y };
     lastTime = now;
@@ -135,11 +199,11 @@ const SoundFX = (() => {
     if (context && activeStroke.gain) {
       const now = context.currentTime;
       activeStroke.gain.gain.cancelScheduledValues(now);
-      activeStroke.gain.gain.linearRampToValueAtTime(0.0001, now + 0.04);
+      activeStroke.gain.gain.linearRampToValueAtTime(0.0001, now + 0.035);
       const s = activeStroke.source;
       setTimeout(() => {
         try { s.stop(); } catch (_) {}
-      }, 50);
+      }, 45);
     }
     activeStroke = null;
     lastPos = null;
@@ -209,13 +273,14 @@ const SoundFX = (() => {
     source.buffer = getPinkNoiseBuffer(context);
 
     const filter = context.createBiquadFilter();
-    filter.type = 'highpass';
-    filter.frequency.setValueAtTime(3200, now);
-    filter.frequency.exponentialRampToValueAtTime(1400, now + duration);
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(2800, now);
+    filter.frequency.exponentialRampToValueAtTime(1300, now + duration);
+    filter.Q.value = 0.7;
 
     const gain = context.createGain();
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.linearRampToValueAtTime(0.07, now + 0.015);
+    gain.gain.linearRampToValueAtTime(0.12, now + 0.02);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
 
     source.connect(filter);
@@ -242,38 +307,42 @@ const SoundFX = (() => {
     if (!context) return;
     const now = context.currentTime;
 
+    // 1. Resonant paper landing thump (audible mid-low range ~280Hz -> 180Hz)
     const osc = context.createOscillator();
     const oscGain = context.createGain();
     osc.type = 'triangle';
-    osc.frequency.setValueAtTime(140, now);
-    osc.frequency.exponentialRampToValueAtTime(45, now + 0.08);
+    osc.frequency.setValueAtTime(320, now);
+    osc.frequency.exponentialRampToValueAtTime(160, now + 0.045);
 
     oscGain.gain.setValueAtTime(0.0001, now);
-    oscGain.gain.linearRampToValueAtTime(0.12, now + 0.008);
-    oscGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+    oscGain.gain.linearRampToValueAtTime(0.16, now + 0.006);
+    oscGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.055);
 
     osc.connect(oscGain);
     oscGain.connect(context.destination);
 
     osc.start(now);
-    osc.stop(now + 0.1);
+    osc.stop(now + 0.06);
 
+    // 2. Paper slap snap (tactile surface friction contact ~800-1400Hz)
     const noise = context.createBufferSource();
     noise.buffer = getPinkNoiseBuffer(context);
     const filter = context.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(800, now);
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(1100, now);
+    filter.Q.setValueAtTime(0.7, now);
 
     const noiseGain = context.createGain();
-    noiseGain.gain.setValueAtTime(0.05, now);
-    noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.06);
+    noiseGain.gain.setValueAtTime(0.0001, now);
+    noiseGain.gain.linearRampToValueAtTime(0.18, now + 0.004);
+    noiseGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.045);
 
     noise.connect(filter);
     filter.connect(noiseGain);
     noiseGain.connect(context.destination);
 
     noise.start(now);
-    noise.stop(now + 0.07);
+    noise.stop(now + 0.05);
   }
 
   // Keyboard typing / quick scratch
@@ -285,7 +354,7 @@ const SoundFX = (() => {
 
     const context = ensureCtx();
     if (!context) return;
-    const duration = 0.03;
+    const duration = 0.028;
     const start = context.currentTime;
 
     const source = context.createBufferSource();
@@ -293,11 +362,11 @@ const SoundFX = (() => {
 
     const filter = context.createBiquadFilter();
     filter.type = 'bandpass';
-    filter.frequency.value = 2400 + Math.random() * 1200;
-    filter.Q.value = 1.0;
+    filter.frequency.value = 1800 + Math.random() * 800;
+    filter.Q.value = 0.9;
 
     const gain = context.createGain();
-    gain.gain.setValueAtTime(0.025 + Math.random() * 0.01, start);
+    gain.gain.setValueAtTime(0.02 + Math.random() * 0.01, start);
     gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
 
     source.connect(filter);
@@ -1578,6 +1647,7 @@ function addNoteOfType(type, extra = {}) {
     stickies.push({ id, tone: 'yellow', x, y, title: 'Sticky note', text: 'Type here…' });
   }
   renderPageContent();
+  SoundFX.stickyDrop();
 }
 
 function wireAddMenu() {
@@ -1659,7 +1729,7 @@ function setupCanvas() {
     drawing = true;
     last = pointerToCanvas(event);
     points = [last];
-    SoundFX.startPenStroke(event.clientX, event.clientY);
+    SoundFX.startPenStroke(event.clientX, event.clientY, state.tool);
     canvas.setPointerCapture(event.pointerId);
   });
 
@@ -1757,6 +1827,7 @@ function wireDrawingTools() {
       tool.classList.add('is-active');
       state.tool = tool.dataset.tool;
       updateCanvasPointerEvents();
+      if (window.updateToolCursorAppearance) window.updateToolCursorAppearance();
 
       if (state.tool === 'sticky') {
         const page = document.querySelector('#notebookPage');
@@ -1768,11 +1839,69 @@ function wireDrawingTools() {
           const stickies = currentPage().stickies || (currentPage().stickies = []);
           stickies.push({ id: `s${Date.now()}`, tone: 'white', x: xPct, y: yPct, title: 'New note', text: 'Tap to edit…' });
           renderPageContent();
+          SoundFX.stickyDrop();
           page.removeEventListener('click', handler);
         };
         page.addEventListener('click', handler, { once: true });
       }
     });
+  });
+}
+
+/* Cozy Floating Tool Cursor Preview
+   Shows the exact effective brush, highlighter chisel, or eraser diameter */
+function wireToolCursorPreview() {
+  const cursor = document.querySelector('#toolCursorPreview');
+  const stage = document.querySelector('#pageFlipStage');
+  if (!cursor || !stage) return;
+
+  function updateCursorAppearance() {
+    cursor.classList.remove('is-pen', 'is-highlighter', 'is-eraser');
+    if (!['pen', 'highlighter', 'eraser'].includes(state.tool)) {
+      cursor.classList.remove('is-visible');
+      return;
+    }
+
+    const scale = state.pageScale || 1;
+    if (state.tool === 'pen') {
+      cursor.classList.add('is-pen');
+      const size = Math.max(4, brushState.width * scale);
+      cursor.style.width = `${size}px`;
+      cursor.style.height = `${size}px`;
+      cursor.style.setProperty('--tool-color', brushState.color);
+    } else if (state.tool === 'highlighter') {
+      cursor.classList.add('is-highlighter');
+      cursor.style.width = `${26 * scale}px`;
+      cursor.style.height = `${16 * scale}px`;
+    } else if (state.tool === 'eraser') {
+      cursor.classList.add('is-eraser');
+      const size = 22 * scale;
+      cursor.style.width = `${size}px`;
+      cursor.style.height = `${size}px`;
+    }
+  }
+
+  window.updateToolCursorAppearance = updateCursorAppearance;
+
+  stage.addEventListener('pointerenter', () => {
+    if (['pen', 'highlighter', 'eraser'].includes(state.tool)) {
+      updateCursorAppearance();
+      cursor.classList.add('is-visible');
+    }
+  });
+
+  stage.addEventListener('pointerleave', () => {
+    cursor.classList.remove('is-visible');
+  });
+
+  stage.addEventListener('pointermove', (event) => {
+    if (!['pen', 'highlighter', 'eraser'].includes(state.tool)) {
+      cursor.classList.remove('is-visible');
+      return;
+    }
+    cursor.classList.add('is-visible');
+    cursor.style.left = `${event.clientX}px`;
+    cursor.style.top = `${event.clientY}px`;
   });
 }
 
@@ -2983,10 +3112,33 @@ function wireBrushOptions() {
   const btn = document.querySelector('#brushOptionsBtn');
   const menu = document.querySelector('#brushOptionsMenu');
   const widthInput = document.querySelector('#penWidthRange');
-  // .page-flip-stage has `perspective`, which makes it the containing block
-  // for any position:fixed descendant — moving the popover to <body> is the
-  // only reliable way to keep it truly viewport-fixed and unclipped.
+  const activeDot = document.querySelector('#brushActiveDot');
+  const previewDot = document.querySelector('#brushPreviewDot');
+  const widthVal = document.querySelector('#brushWidthVal');
+  const presetBtns = menu.querySelectorAll('.brush-preset-btn');
+
+  // Move popover to body so fixed positioning is viewport-relative
   document.body.appendChild(menu);
+
+  function syncBrushUI() {
+    if (activeDot) activeDot.style.background = brushState.color;
+    if (previewDot) {
+      previewDot.style.background = brushState.color;
+      const sizePx = Math.max(3, Math.min(22, brushState.width * 2.8));
+      previewDot.style.width = `${sizePx}px`;
+      previewDot.style.height = `${sizePx}px`;
+    }
+    if (widthVal) widthVal.textContent = `${brushState.width.toFixed(1)} px`;
+    if (widthInput) widthInput.value = brushState.width;
+
+    presetBtns.forEach((p) => {
+      p.classList.toggle('is-active', Math.abs(parseFloat(p.dataset.preset) - brushState.width) < 0.2);
+    });
+
+    if (window.updateToolCursorAppearance) window.updateToolCursorAppearance();
+  }
+
+  syncBrushUI();
 
   btn.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -3002,11 +3154,23 @@ function wireBrushOptions() {
       menu.querySelectorAll('.swatch').forEach((s) => s.classList.remove('is-active'));
       swatch.classList.add('is-active');
       brushState.color = swatch.dataset.color;
+      syncBrushUI();
+    });
+  });
+
+  presetBtns.forEach((preset) => {
+    preset.addEventListener('click', (event) => {
+      event.stopPropagation();
+      brushState.width = parseFloat(preset.dataset.preset);
+      syncBrushUI();
     });
   });
 
   widthInput.addEventListener('click', (event) => event.stopPropagation());
-  widthInput.addEventListener('input', () => { brushState.width = Number(widthInput.value); });
+  widthInput.addEventListener('input', () => {
+    brushState.width = Number(widthInput.value);
+    syncBrushUI();
+  });
 
   document.addEventListener('click', () => { menu.hidden = true; });
 }
@@ -3401,6 +3565,7 @@ wireAddPage();
 wirePagesListModal();
 wireAddMenu();
 wireDrawingTools();
+wireToolCursorPreview();
 wireUndoRedo();
 wireBrushOptions();
 wirePageBackground();
