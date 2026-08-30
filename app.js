@@ -2920,23 +2920,36 @@ function smartFormatText(text) {
   // Clean up strange PDF spacing
   out = out.replace(/[ \t]+/g, ' ');
 
-  // Aggressively break sentences if it's a wall of text (few newlines)
-  if (out.split('\n').length < (out.length / 100)) {
+  // 0. Unwrap hard-wrapped lines (PDF artifacts)
+  // If a line ends with a normal word character (no punctuation) and the next line starts with a lowercase letter, join them with a space.
+  out = out.replace(/([a-zA-Z,])\n([a-z])/g, '$1 $2');
+  // If a line ends in a hyphen, remove the hyphen and join
+  out = out.replace(/([a-zA-Z])-\n([a-zA-Z])/g, '$1$2');
+
+  // Aggressively break sentences if it's a wall of text
+  if (out.split('\n').length < (out.length / 80)) {
      out = out.replace(/([a-z]{2,}[.?!])\s+([A-Z])/g, '$1\n\n$2');
   }
 
   // 1. Force headers for numbered sections (e.g., "1. Introduction" or "2. Main Organs")
-  // Allows matching even if it's inline, by forcing a break before it
   out = out.replace(/(?:^|\n|\s+)(\d+(?:\.\d+)*\.\s+[A-Z][^.!?:]{2,60})(?:\s|$)/g, '\n\n# $1\n\n');
   
-  // 2. Definitions: "Mouth: Digestion begins" -> "- **Mouth:** Digestion begins"
-  // Allows matching inline after a sentence or space
-  out = out.replace(/(?:^|\n|\s+)([A-Z][a-zA-Z\s-]{2,30}):\s+/g, '\n\n- **$1:** ');
+  // 1b. Force headers for ALL CAPS lines (often titles)
+  out = out.replace(/(?:^|\n)([A-Z\s]{5,40})(?:\n|$)/g, (match, p1) => {
+    if (p1.trim() && p1.match(/[A-Z]/)) return `\n\n# ${p1.trim()}\n\n`;
+    return match;
+  });
+
+  // 2. Definitions: "Mouth: Digestion begins" -> "- Mouth: Digestion begins"
+  out = out.replace(/(?:^|\n|\s+)([A-Z][a-zA-Z\s-]{2,30}):\s+/g, '\n\n- $1: ');
 
   // 3. Ensure standard markdown bullets get their own lines
   out = out.replace(/(?:^|\n|\s+)([-*]\s+[A-Z])/g, '\n\n$1');
 
-  // 4. Clean up multiple empty lines
+  // 4. Highlight Summaries/Conclusions as sticky notes
+  out = out.replace(/(?:^|\n)(summary|conclusion|key takeaways|important):\s*(.*?)(?:\n\n|$)/gi, '\n\n> Note: $2\n\n');
+
+  // Clean up multiple empty lines
   out = out.replace(/\n{3,}/g, '\n\n');
   
   return out.trim();
