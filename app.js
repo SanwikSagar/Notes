@@ -2906,16 +2906,21 @@ function smartFormatText(text) {
   // Clean up strange PDF spacing
   out = out.replace(/[ \t]+/g, ' ');
 
-  // 1. Convert numbered lines to headers (e.g., "1. Introduction")
-  // Only matches if the entire line is short (< 80 chars) OR if we match up to the first period
-  out = out.replace(/(^|\n)(\d+(?:\.\d+)*\.\s+[^\n.]{2,80})(?:\n|$)/g, '$1\n# $2\n\n');
+  // Aggressively break sentences if it's a wall of text (few newlines)
+  if (out.split('\n').length < (out.length / 100)) {
+     out = out.replace(/([a-z]{2,}[.?!])\s+([A-Z])/g, '$1\n\n$2');
+  }
+
+  // 1. Force headers for numbered sections (e.g., "1. Introduction" or "2. Main Organs")
+  // Allows matching even if it's inline, by forcing a break before it
+  out = out.replace(/(?:^|\n|\s+)(\d+(?:\.\d+)*\.\s+[A-Z][^.!?:]{2,60})(?:\s|$)/g, '\n\n# $1\n\n');
   
   // 2. Definitions: "Mouth: Digestion begins" -> "- **Mouth:** Digestion begins"
-  // Matches start of line or sentence
-  out = out.replace(/(^|\n)([A-Z][a-zA-Z\s-]{2,30}):\s+/g, '$1\n- **$2:** ');
+  // Allows matching inline after a sentence or space
+  out = out.replace(/(?:^|\n|\s+)([A-Z][a-zA-Z\s-]{2,30}):\s+/g, '\n\n- **$1:** ');
 
-  // 3. Ensure bullets are treated correctly
-  out = out.replace(/(^|\n)([-*]\s+[A-Z])/g, '$1\n$2');
+  // 3. Ensure standard markdown bullets get their own lines
+  out = out.replace(/(?:^|\n|\s+)([-*]\s+[A-Z])/g, '\n\n$1');
 
   // 4. Clean up multiple empty lines
   out = out.replace(/\n{3,}/g, '\n\n');

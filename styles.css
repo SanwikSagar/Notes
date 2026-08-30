@@ -1593,6 +1593,9 @@ svg {
   padding: 2px 6px;
   border-radius: 4px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .page-row {
@@ -1627,6 +1630,14 @@ svg {
   align-items: flex-start;
   justify-content: space-between;
   gap: 6px;
+}
+
+.functions-block li span,
+.sticky ul:not(.checklist) li span {
+  flex: 1;
+  min-width: 0;
+  word-wrap: break-word;
+  white-space: pre-wrap;
 }
 
 /* Sticky notes */
