@@ -2900,6 +2900,17 @@ function chunkText(text, maxLen = 1200) {
   return chunks.length ? chunks : [text.trim()];
 }
 
+function smartFormatText(text) {
+  let out = text;
+  // 1. Detect implicit headers (e.g. "2. Main Organs") and make them real headers
+  out = out.replace(/([.?!]\s+|^)(\d+\.\s+[A-Z][^.!?:]{2,50})/g, '$1\n\n# $2\n\n');
+  // 2. Detect definitions/key terms (e.g. "Stomach: The stomach stores") and make them bullet points
+  out = out.replace(/([.?!]\s+|^)([A-Z][A-Za-z\s-]{2,25}:\s)/g, '$1\n- $2');
+  // 3. Clean up multiple blank lines
+  out = out.replace(/\n{3,}/g, '\n\n');
+  return out.trim();
+}
+
 async function extractPdfText(file) {
   if (typeof pdfjsLib === 'undefined') throw new Error('PDF_ENGINE_UNAVAILABLE');
   const buffer = await file.arrayBuffer();
@@ -2908,7 +2919,19 @@ async function extractPdfText(file) {
   for (let i = 1; i <= pdf.numPages; i += 1) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    text += `${content.items.map((item) => item.str).join(' ')}\n\n`;
+    let lastY = -1;
+    let pageText = '';
+    content.items.forEach((item) => {
+      // If Y coordinate changes by more than 4px, it's a new line
+      if (lastY !== -1 && Math.abs(item.transform[5] - lastY) > 4) {
+        pageText += '\n';
+      } else if (lastY !== -1) {
+        pageText += ' '; // Same line spacing
+      }
+      pageText += item.str;
+      lastY = item.transform[5];
+    });
+    text += pageText + '\n\n';
   }
   return text;
 }
@@ -2922,7 +2945,11 @@ async function extractDocxText(file) {
 
 function insertImportedTextAsPages(filename, text) {
   const nb = currentNotebook();
-  const chunks = chunkText(text);
+  
+  // Use heuristic AI formatter to infer structure before chunking
+  const formattedText = smartFormatText(text);
+  
+  const chunks = chunkText(formattedText);
   const baseTitle = filename.replace(/\.[^.]+$/, '') || 'Imported file';
   const firstIndex = nb.pages.length;
   const tones = ['yellow', 'blue', 'pink', 'white', 'outline'];
@@ -3117,7 +3144,7 @@ async function handleFileForReadingPane(file) {
     try {
       const text = await extractPdfText(file);
       closeModal();
-      openReadingPane(file.name, text);
+      openReadingPane(file.name, smartFormatText(text));
     } catch (e) {
       closeModal();
       openModal('<h3>PDF Error</h3><p>Could not extract text from this PDF.</p><div class="modal-actions"><button class="modal-btn confirm" data-modal-close>OK</button></div>');
@@ -3136,7 +3163,7 @@ async function handleFileForReadingPane(file) {
 
   const reader = new FileReader();
   reader.onload = (e) => {
-    openReadingPane(file.name, e.target.result);
+    openReadingPane(file.name, smartFormatText(e.target.result));
   };
   reader.readAsText(file);
 }
