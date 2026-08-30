@@ -3135,13 +3135,14 @@ function insertImportedTextAsPages(filename, text) {
         let itemText = trimmed
           .replace(/^[-*]\s+/, '')
           .replace(/^\d+[.)]\s+/, '')
-          .replace(/\*\*(.+?)\*\*/g, '$1');  // **bold** → bold (everywhere in the string)
+          .replace(/\*\*/g, '');  // strip all ** marks
         
         currentList.items.push(itemText);
 
         // Extract flashcard: definition-style items "Term: explanation"
-        const defMatch = itemText.match(/^([^:]{2,40}):\s+(.{10,})/);
-        if (defMatch && generatedFlashcards.length < 20) {
+        // Also matching when the colon has no space after it, or when the term is a bit longer
+        const defMatch = itemText.match(/^([^:]{2,60}):\s*(.{10,})/);
+        if (defMatch && generatedFlashcards.length < 50) {
           generatedFlashcards.push({ q: `What is ${defMatch[1].trim()}?`, a: defMatch[2].trim() });
         }
         // Also add as sub-branch to current mind map branch
@@ -3153,11 +3154,11 @@ function insertImportedTextAsPages(filename, text) {
           const childLabel = itemText.split(':')[0].slice(0, 30);
           // Spread children radially outward from the parent direction
           const pAngle = Math.atan2(parentBranch.y - 50, parentBranch.x - 50);
-          const spread = Math.PI / 3;
+          const spread = Math.PI * 0.8; // 144° spread
           const childAngle = pAngle - spread / 2 + (childIdx / Math.max(childCount - 1, 1)) * spread;
-          const cr = 18;
-          const cx2 = Math.round(Math.max(5, Math.min(95, parentBranch.x + cr * Math.cos(childAngle))));
-          const cy2 = Math.round(Math.max(5, Math.min(95, parentBranch.y + cr * Math.sin(childAngle))));
+          const cr = 24; // Push them further out
+          const cx2 = Math.round(Math.max(3, Math.min(97, parentBranch.x + cr * Math.cos(childAngle))));
+          const cy2 = Math.round(Math.max(3, Math.min(97, parentBranch.y + cr * Math.sin(childAngle))));
           if (childIdx < childCount) {
             parentBranch.children.push({ label: childLabel, x: cx2, y: cy2, children: [] });
           }
@@ -3767,9 +3768,38 @@ function wireSidebarToggle() {
 
   backdrop.addEventListener('click', closeSidebar);
   document.addEventListener('keydown', (event) => {
+    // Escape to close sidebar / modals
     if (event.key === 'Escape') {
       closeSidebar();
       closeModal();
+      return;
+    }
+
+    // Ignore shortcuts if the user is typing in an input/textarea/contenteditable
+    const isTyping = event.target.tagName === 'INPUT' || 
+                     event.target.tagName === 'TEXTAREA' || 
+                     event.target.isContentEditable;
+
+    // View Switching: 1, 2, 3, 4
+    if (!event.ctrlKey && !event.metaKey && !event.altKey && !isTyping) {
+      switch (event.key) {
+        case '1': event.preventDefault(); setView('notes'); break;
+        case '2': event.preventDefault(); setView('flashcards'); break;
+        case '3': event.preventDefault(); setView('mindmap'); break;
+        case '4': event.preventDefault(); setView('review'); break;
+        case 'ArrowLeft': 
+          if (state.view === 'notes') {
+            event.preventDefault();
+            goToPage(state.pageIndex - 1, 'prev');
+          }
+          break;
+        case 'ArrowRight':
+          if (state.view === 'notes') {
+            event.preventDefault();
+            goToPage(state.pageIndex + 1, 'next');
+          }
+          break;
+      }
     }
   });
 }
