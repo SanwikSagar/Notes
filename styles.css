@@ -2863,3 +2863,137 @@ input:focus-visible {
     font-size: 11px;
   }
 }
+
+/* ---------- Reading Pane & Import ---------- */
+
+.reading-pane {
+  width: 400px;
+  flex-shrink: 0;
+  background: var(--paper);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  transition: width 0.3s cubic-bezier(0.2, 0, 0, 1);
+  box-shadow: 4px 0 12px rgba(58, 51, 39, 0.05);
+}
+
+.reading-pane[hidden] {
+  display: none !important;
+}
+
+.reading-pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(8px);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.reading-pane-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reading-pane-content {
+  flex: 1;
+  padding: 24px;
+  overflow-y: auto;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink);
+  scrollbar-width: thin;
+}
+
+.reading-pane-content h1, .reading-pane-content h2, .reading-pane-content h3 {
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+}
+
+.reading-pane-content p {
+  margin-bottom: 1em;
+}
+
+.reading-pane-extract-btn {
+  position: fixed;
+  z-index: 100;
+  background: var(--ink);
+  color: var(--paper);
+  border: none;
+  border-radius: 999px;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+.reading-pane-extract-btn:active {
+  transform: scale(0.96);
+}
+
+.reading-pane-extract-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.reading-pane-extract-btn[hidden] {
+  display: none !important;
+}
+
+.file-dropzone {
+  position: fixed;
+  inset: 0;
+  background: rgba(244, 241, 234, 0.85);
+  backdrop-filter: blur(4px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.file-dropzone[hidden] {
+  display: none !important;
+}
+
+.dropzone-content {
+  background: var(--paper);
+  border: 2px dashed var(--muted);
+  border-radius: 24px;
+  padding: 48px;
+  text-align: center;
+  color: var(--ink);
+  box-shadow: 0 24px 48px rgba(58, 51, 39, 0.1);
+  pointer-events: none;
+}
+
+.dropzone-content svg {
+  width: 48px;
+  height: 48px;
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+
+.dropzone-content h3 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+
+.dropzone-content p {
+  margin: 0;
+  color: var(--muted);
+}

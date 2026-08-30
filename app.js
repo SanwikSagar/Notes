@@ -3078,6 +3078,165 @@ function wireFileToNotesImport() {
   });
 }
 
+function wireDragAndDropImport() {
+  const dropzone = document.querySelector('#fileDropzone');
+  if (!dropzone) return;
+
+  let dragTimer;
+  document.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    const types = e.dataTransfer.types;
+    if (types && types.includes('Files')) {
+      dropzone.hidden = false;
+      clearTimeout(dragTimer);
+    }
+  });
+
+  document.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    clearTimeout(dragTimer);
+    dragTimer = setTimeout(() => {
+      dropzone.hidden = true;
+    }, 100);
+  });
+
+  document.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.hidden = true;
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFileForReadingPane(e.dataTransfer.files[0]);
+    }
+  });
+}
+
+async function handleFileForReadingPane(file) {
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  
+  if (ext === 'pdf') {
+    openModal('<h3>Reading PDF...</h3><p>Extracting text from PDF.</p>');
+    try {
+      const text = await extractPdfText(file);
+      closeModal();
+      openReadingPane(file.name, text);
+    } catch (e) {
+      closeModal();
+      openModal('<h3>PDF Error</h3><p>Could not extract text from this PDF.</p><div class="modal-actions"><button class="modal-btn confirm" data-modal-close>OK</button></div>');
+    }
+    return;
+  }
+  
+  if (!['txt', 'md', 'markdown'].includes(ext)) {
+    openModal(`
+      <h3>Unsupported file type</h3>
+      <p>Only .txt, .md, and .pdf files are supported for the reading pane currently.</p>
+      <div class="modal-actions"><button class="modal-btn confirm" data-modal-close>OK</button></div>
+    `);
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    openReadingPane(file.name, e.target.result);
+  };
+  reader.readAsText(file);
+}
+
+function openReadingPane(title, text) {
+  const pane = document.querySelector('#readingPane');
+  const titleEl = document.querySelector('#readingPaneTitle');
+  const contentEl = document.querySelector('#readingPaneContent');
+  
+  if (!pane || !titleEl || !contentEl) return;
+  
+  titleEl.textContent = title;
+  
+  let html = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  html = html.replace(/^# (.*?)$/gm, '<h1>$1</h1>');
+  html = html.replace(/^## (.*?)$/gm, '<h2>$1</h2>');
+  html = html.replace(/^### (.*?)$/gm, '<h3>$1</h3>');
+  html = html.replace(/\n\n/g, '</p><p>');
+  html = html.replace(/\n/g, '<br>');
+  html = `<p>${html}</p>`;
+  
+  contentEl.innerHTML = html;
+  pane.hidden = false;
+  
+  window.dispatchEvent(new Event('resize'));
+}
+
+function wireReadingPaneExtraction() {
+  const contentEl = document.querySelector('#readingPaneContent');
+  const btn = document.querySelector('#extractToNoteBtn');
+  const closeBtn = document.querySelector('#closeReadingPaneBtn');
+  const pane = document.querySelector('#readingPane');
+  
+  if (closeBtn && pane) {
+    closeBtn.addEventListener('click', () => {
+      pane.hidden = true;
+      window.dispatchEvent(new Event('resize'));
+    });
+  }
+  
+  if (!contentEl || !btn) return;
+
+  document.addEventListener('selectionchange', () => {
+    const selection = window.getSelection();
+    if (!selection.rangeCount || selection.isCollapsed) {
+      btn.hidden = true;
+      return;
+    }
+
+    if (contentEl.contains(selection.anchorNode)) {
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      // Ensure the button isn't off-screen to the left
+      btn.style.left = \`\${Math.max(10, rect.right + 10)}px\`;
+      btn.style.top = \`\${Math.max(10, rect.top - 40)}px\`;
+      btn.hidden = false;
+    } else {
+      btn.hidden = true;
+    }
+  });
+
+  btn.addEventListener('mousedown', (e) => {
+    e.preventDefault(); 
+  });
+
+  btn.addEventListener('click', () => {
+    const selection = window.getSelection();
+    if (selection.isCollapsed) return;
+    
+    const text = selection.toString().trim();
+    if (!text) return;
+
+    const nb = currentNotebook();
+    const page = currentPage();
+    
+    const tones = ['yellow', 'blue', 'pink', 'white', 'outline'];
+    const tone = tones[page.stickies.length % tones.length];
+
+    const sticky = {
+      id: \`s_ext_\${Date.now()}\`,
+      tone: tone,
+      x: 30 + Math.random() * 40,
+      y: 20 + Math.random() * 40,
+      title: 'Extracted Note',
+      text: text
+    };
+    
+    page.stickies.push(sticky);
+    saveState();
+    
+    if (state.view === 'notes') {
+      renderPageContent();
+      if (SoundFX.stickyDrop) SoundFX.stickyDrop();
+    }
+    
+    selection.removeAllRanges();
+    btn.hidden = true;
+  });
+}
+
 function wireNewNotebook() {
   document.querySelector('#newNotebookBtn').addEventListener('click', () => {
     let selectedColor = NOTEBOOK_COLORS[Object.keys(notebooks).length % NOTEBOOK_COLORS.length].id;
@@ -3760,6 +3919,8 @@ wireReviewFilters();
 wireSearch();
 wireMenus();
 wireFileToNotesImport();
+wireDragAndDropImport();
+wireReadingPaneExtraction();
 wireNewNotebook();
 wireQuickFilters();
 wireSidebarToggle();
