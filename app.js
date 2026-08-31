@@ -626,6 +626,153 @@ function currentPage() {
   return currentNotebook().pages[state.pageIndex];
 }
 
+/* ---------- Live lecture dictation ---------- */
+
+const lectureDictation = {
+  recognition: null,
+  isListening: false,
+  shouldContinue: false,
+  finalText: '',
+  interimText: ''
+};
+
+function normaliseDictation(text) {
+  return text
+    .replace(/\s+/g, ' ')
+    .replace(/\s+([,.;:!?])/g, '$1')
+    .replace(/\bi\b/g, 'I')
+    .trim();
+}
+
+function lectureTranscriptHtml() {
+  const finalText = escapeHtml(lectureDictation.finalText);
+  const interimText = escapeHtml(lectureDictation.interimText);
+  return `${finalText}${interimText ? `<span class="lecture-interim">${finalText ? ' ' : ''}${interimText}</span>` : ''}`;
+}
+
+function refreshLectureUI() {
+  const transcript = document.querySelector('#lectureTranscript');
+  const status = document.querySelector('#lectureStatus');
+  const start = document.querySelector('#lectureStartBtn');
+  const finish = document.querySelector('#lectureFinishBtn');
+  const toolbarBtn = document.querySelector('#lectureNotesBtn');
+  if (transcript && document.activeElement !== transcript) {
+    transcript.innerHTML = lectureTranscriptHtml();
+    transcript.scrollTop = transcript.scrollHeight;
+  }
+  if (status) {
+    status.textContent = lectureDictation.isListening ? 'Listening — words appear as your lecturer speaks.' : 'Ready. You can edit any wording before turning it into notes.';
+    status.classList.toggle('is-live', lectureDictation.isListening);
+  }
+  if (start) start.textContent = lectureDictation.isListening ? 'Pause' : 'Start listening';
+  if (finish) finish.disabled = !lectureDictation.finalText.trim();
+  if (toolbarBtn) toolbarBtn.classList.toggle('is-recording', lectureDictation.isListening);
+}
+
+function stopLectureDictation() {
+  lectureDictation.shouldContinue = false;
+  lectureDictation.isListening = false;
+  if (lectureDictation.recognition) lectureDictation.recognition.stop();
+  refreshLectureUI();
+}
+
+function startLectureDictation(language) {
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Recognition) {
+    openModal('<h3>Live dictation is unavailable</h3><p>Use the latest Chrome or Edge and allow microphone access to take live lecture notes.</p><div class="modal-actions"><button class="modal-btn confirm" data-modal-close>OK</button></div>');
+    return;
+  }
+  if (lectureDictation.recognition) lectureDictation.recognition.stop();
+  const recognition = new Recognition();
+  lectureDictation.recognition = recognition;
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.maxAlternatives = 3;
+  recognition.lang = language || navigator.language || 'en-US';
+  lectureDictation.shouldContinue = true;
+  recognition.onstart = () => { lectureDictation.isListening = true; refreshLectureUI(); };
+  recognition.onresult = (event) => {
+    let interim = '';
+    for (let i = event.resultIndex; i < event.results.length; i += 1) {
+      const result = event.results[i];
+      const best = result[0] && result[0].transcript;
+      if (!best) continue;
+      if (result.isFinal) lectureDictation.finalText = normaliseDictation(`${lectureDictation.finalText} ${best}`);
+      else interim += best;
+    }
+    lectureDictation.interimText = normaliseDictation(interim);
+    refreshLectureUI();
+  };
+  recognition.onerror = (event) => {
+    lectureDictation.isListening = false;
+    lectureDictation.interimText = '';
+    if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+      lectureDictation.shouldContinue = false;
+      const status = document.querySelector('#lectureStatus');
+      if (status) status.textContent = 'Microphone access was blocked. Allow it in your browser, then try again.';
+    }
+    refreshLectureUI();
+  };
+  recognition.onend = () => {
+    lectureDictation.isListening = false;
+    lectureDictation.interimText = '';
+    refreshLectureUI();
+    // Browsers occasionally end a long recognition session; resume while the
+    // user has not paused it so a lecture can be captured hands-free.
+    if (lectureDictation.shouldContinue && document.querySelector('#lectureTranscript')) {
+      setTimeout(() => { if (lectureDictation.shouldContinue) recognition.start(); }, 180);
+    }
+  };
+  recognition.start();
+}
+
+function createLectureNotes() {
+  const transcript = document.querySelector('#lectureTranscript');
+  if (transcript) lectureDictation.finalText = normaliseDictation(transcript.innerText);
+  const text = lectureDictation.finalText;
+  if (!text) return;
+  stopLectureDictation();
+  const title = `Lecture notes — ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
+  insertImportedTextAsPages(title, text, { lecture: true });
+  closeModal();
+}
+
+function openLectureNotes() {
+  openModal(`
+    <div class="lecture-modal">
+      <h3>Live lecture notes</h3>
+      <p>Natural live dictation with editable text. Keep the microphone near the lecturer for the best accuracy.</p>
+      <div class="lecture-controls">
+        <button class="modal-btn confirm" id="lectureStartBtn">Start listening</button>
+        <select id="lectureLanguage" aria-label="Dictation language"><option value="en-US">English (US)</option><option value="en-IN">English (India)</option><option value="en-GB">English (UK)</option><option value="hi-IN">Hindi</option></select>
+        <span class="lecture-status" id="lectureStatus">Ready. You can edit any wording before turning it into notes.</span>
+      </div>
+      <div class="lecture-transcript" id="lectureTranscript" contenteditable="true" role="textbox" aria-label="Live transcript" spellcheck="true"></div>
+      <p class="lecture-tip">Tip: names and specialised terms are easiest to correct here before creating your structured notes.</p>
+      <div class="modal-actions"><button class="modal-btn cancel" data-modal-close id="lectureCancelBtn">Cancel</button><button class="modal-btn confirm" id="lectureFinishBtn">Create smart notes</button></div>
+    </div>`, {
+    onOpen(box) {
+      box.querySelector('#lectureStartBtn').addEventListener('click', () => {
+        const language = box.querySelector('#lectureLanguage').value;
+        if (lectureDictation.isListening) stopLectureDictation(); else startLectureDictation(language);
+      });
+      box.querySelector('#lectureFinishBtn').addEventListener('click', createLectureNotes);
+      box.querySelector('#lectureCancelBtn').addEventListener('click', stopLectureDictation);
+      box.querySelector('#lectureTranscript').addEventListener('input', (event) => {
+        lectureDictation.finalText = normaliseDictation(event.currentTarget.innerText);
+        lectureDictation.interimText = '';
+        refreshLectureUI();
+      });
+      refreshLectureUI();
+    }
+  });
+}
+
+function wireLectureNotes() {
+  const btn = document.querySelector('#lectureNotesBtn');
+  if (btn) btn.addEventListener('click', openLectureNotes);
+}
+
 /* ---------- Sidebar / notebook list ---------- */
 
 function filteredNotebookEntries() {
@@ -1691,6 +1838,7 @@ function wireAddMenu() {
   const btn = document.querySelector('#addNoteButton');
   const menu = document.querySelector('#addMenu');
   const fileInput = document.querySelector('#imageFileInput');
+  const videoInput = document.querySelector('#videoFileInput');
 
   btn.addEventListener('click', (event) => {
     event.stopPropagation();
@@ -1703,6 +1851,7 @@ function wireAddMenu() {
     option.addEventListener('click', () => {
       menu.hidden = true;
       if (option.dataset.addType === 'image') fileInput.click();
+      else if (option.dataset.addType === 'video') openVideoToNotes();
       else addNoteOfType(option.dataset.addType);
     });
   });
@@ -1716,7 +1865,115 @@ function wireAddMenu() {
     fileInput.value = '';
   });
 
+  videoInput.addEventListener('change', () => {
+    const file = videoInput.files && videoInput.files[0];
+    videoInput.value = '';
+    if (file) transcribeVideoToNotes(file);
+  });
+
   document.addEventListener('click', () => { menu.hidden = true; });
+}
+
+/* ---------- Video / audio to notes ---------- */
+
+const MAX_TRANSCRIPTION_FILE_BYTES = 25 * 1024 * 1024;
+
+function openVideoToNotes() {
+  openModal(`
+    <div class="lecture-modal">
+      <h3>Video lecture to notes</h3>
+      <p>Paste a public YouTube lecture link to use its available captions, or upload a recording to transcribe its audio.</p>
+      <label class="video-url-label" for="onlineVideoUrl">Lecture URL</label>
+      <input class="video-url-input" id="onlineVideoUrl" type="url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="url">
+      <p class="lecture-tip">YouTube links work when captions are available. Other streaming platforms must provide a downloadable video/audio file before they can be transcribed.</p>
+      <div class="modal-actions"><button class="modal-btn cancel" data-modal-close>Cancel</button><button class="modal-btn cancel" id="videoUploadBtn">Upload file</button><button class="modal-btn confirm" id="onlineVideoNotesBtn">Get lecture notes</button></div>
+    </div>`, {
+    onOpen(box) {
+      box.querySelector('#videoUploadBtn').addEventListener('click', () => {
+        closeModal();
+        document.querySelector('#videoFileInput').click();
+      });
+      box.querySelector('#onlineVideoNotesBtn').addEventListener('click', () => {
+        const url = box.querySelector('#onlineVideoUrl').value.trim();
+        if (!url) {
+          box.querySelector('#onlineVideoUrl').focus();
+          return;
+        }
+        transcribeOnlineVideoToNotes(url);
+      });
+    }
+  });
+}
+
+function openVideoTranscriptReview(filename, text) {
+  openModal(`
+    <div class="lecture-modal">
+      <h3>Review video transcript</h3>
+      <p>Correct names or technical terms, then create structured notes from the recording.</p>
+      <div class="lecture-transcript" id="videoTranscript" contenteditable="true" role="textbox" aria-label="Video transcript" spellcheck="true">${escapeHtml(text)}</div>
+      <div class="modal-actions"><button class="modal-btn cancel" data-modal-close>Cancel</button><button class="modal-btn confirm" id="videoNotesBtn">Create smart notes</button></div>
+    </div>`, {
+    onOpen(box) {
+      box.querySelector('#videoNotesBtn').addEventListener('click', () => {
+        const transcript = normaliseDictation(box.querySelector('#videoTranscript').innerText);
+        if (!transcript) return;
+        insertImportedTextAsPages(filename, transcript, { video: true });
+        closeModal();
+      });
+    }
+  });
+}
+
+async function transcribeVideoToNotes(file) {
+  if (file.size > MAX_TRANSCRIPTION_FILE_BYTES) {
+    openModal('<h3>Video is too large</h3><p>Please trim or export the recording under 25 MB, then try again. This keeps uploads reliable and within the transcription service limit.</p><div class="modal-actions"><button class="modal-btn confirm" data-modal-close>OK</button></div>');
+    return;
+  }
+  openModal(`<h3>Transcribing “${escapeHtml(file.name)}”…</h3><p>Extracting the spoken content and preparing your notes. Keep this window open.</p>`);
+  try {
+    const response = await fetch('/api/transcribe', {
+      method: 'POST',
+      headers: {
+        'Content-Type': file.type || 'application/octet-stream',
+        'X-Filename': encodeURIComponent(file.name),
+        'X-Transcription-Language': (navigator.language || 'en').slice(0, 2)
+      },
+      body: file
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'TRANSCRIPTION_FAILED');
+    if (!payload.text || !payload.text.trim()) throw new Error('NO_SPEECH_FOUND');
+    openVideoTranscriptReview(file.name, payload.text);
+  } catch (error) {
+    const message = error.message === 'TRANSCRIPTION_NOT_CONFIGURED'
+      ? 'Video transcription needs a server-side OPENAI_API_KEY. See server/README.md for setup.'
+      : error.message === 'NO_SPEECH_FOUND'
+        ? 'No clear speech was found in this recording.'
+        : 'The video could not be transcribed. Try an MP4, WebM, M4A, or MP3 file under 25 MB.';
+    openModal(`<h3>Couldn’t transcribe video</h3><p>${escapeHtml(message)}</p><div class="modal-actions"><button class="modal-btn confirm" data-modal-close>OK</button></div>`);
+  }
+}
+
+async function transcribeOnlineVideoToNotes(url) {
+  openModal('<h3>Getting lecture transcript…</h3><p>Looking for the video’s available captions.</p>');
+  try {
+    const response = await fetch('/api/online-video-transcript', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, language: (navigator.language || 'en').slice(0, 2) })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'ONLINE_TRANSCRIPT_FAILED');
+    if (!payload.text || !payload.text.trim()) throw new Error('NO_CAPTIONS_FOUND');
+    openVideoTranscriptReview(payload.title || 'Online lecture', payload.text);
+  } catch (error) {
+    const message = error.message === 'UNSUPPORTED_VIDEO_HOST'
+      ? 'This link is not supported yet. Paste a public YouTube lecture URL, or upload the video/audio file instead.'
+      : error.message === 'NO_CAPTIONS_FOUND'
+        ? 'No captions were available for this video. Download the recording and use Upload file to transcribe its audio.'
+        : 'The lecture transcript could not be retrieved. Check that the video is public and has captions, then try again.';
+    openModal(`<h3>Couldn’t get lecture notes</h3><p>${escapeHtml(message)}</p><div class="modal-actions"><button class="modal-btn confirm" data-modal-close>OK</button></div>`);
+  }
 }
 
 /* ---------- Drawing canvas ---------- */
@@ -2571,6 +2828,7 @@ function openModal(html, { onOpen } = {}) {
 }
 
 function closeModal() {
+  if (lectureDictation.isListening) stopLectureDictation();
   const overlay = document.querySelector('#modalOverlay');
   overlay.hidden = true;
   document.querySelector('#modalBox').innerHTML = '';
@@ -2902,13 +3160,21 @@ function chunkText(text, maxLen = 1200) {
   const paragraphs = text.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
   const chunks = [];
   let current = '';
-  paragraphs.forEach((p) => {
-    if (current && (current.length + p.length + 2) > maxLen) {
-      chunks.push(current.trim());
-      current = p;
-    } else {
-      current = current ? `${current}\n\n${p}` : p;
-    }
+  paragraphs.forEach((paragraph) => {
+    // Retain every word from exceptionally long paragraphs while choosing
+    // sentence boundaries first; only a single overlong word is ever kept
+    // intact rather than silently discarded.
+    const units = paragraph.length > maxLen
+      ? (paragraph.match(/[^.!?]+(?:[.!?]+|$)/g) || [paragraph]).map((unit) => unit.trim()).filter(Boolean)
+      : [paragraph];
+    units.forEach((unit) => {
+      if (current && (current.length + unit.length + 2) > maxLen) {
+        chunks.push(current.trim());
+        current = unit;
+      } else {
+        current = current ? `${current}\n\n${unit}` : unit;
+      }
+    });
   });
   if (current) chunks.push(current.trim());
   return chunks.length ? chunks : [text.trim()];
@@ -3036,7 +3302,7 @@ function parseIntoSections(text) {
   return sections;
 }
 
-function insertImportedTextAsPages(filename, text) {
+function insertImportedTextAsPages(filename, text, options = {}) {
   const nb = currentNotebook();
   const tones = ['yellow', 'blue', 'pink', 'white', 'outline'];
   
@@ -3056,19 +3322,42 @@ function insertImportedTextAsPages(filename, text) {
   
   // Step 3: Build a page for each section
   const chunkedSections = [];
-  // Chunk each section into sub-pages if very long
+  // Chunk each section conservatively. Imported pages have fixed writing
+  // margins, so character-aware chunks prevent the last paragraph being
+  // squeezed against, or beyond, the bottom of the paper.
   sections.forEach((section) => {
     const body = section.lines.join('\n');
     const paragraphs = body.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
-    const MAX_PARAS = 6;
-    if (paragraphs.length <= MAX_PARAS) {
+    const MAX_PARAS = 4;
+    const MAX_CHARS = 780;
+    if (paragraphs.length <= MAX_PARAS && body.length <= MAX_CHARS) {
       chunkedSections.push(section);
     } else {
-      // Split into sub-pages preserving the heading on the first
-      for (let i = 0; i < paragraphs.length; i += MAX_PARAS) {
-        const slice = paragraphs.slice(i, i + MAX_PARAS);
-        const label = section.heading;
-        chunkedSections.push({ heading: label, lines: slice.join('\n\n').split('\n') });
+      let pageParagraphs = [];
+      let pageChars = 0;
+      paragraphs.forEach((paragraph) => {
+        const tooLong = pageParagraphs.length && (pageParagraphs.length >= MAX_PARAS || pageChars + paragraph.length > MAX_CHARS);
+        if (tooLong) {
+          chunkedSections.push({ heading: section.heading, lines: pageParagraphs.join('\n\n').split('\n') });
+          pageParagraphs = [];
+          pageChars = 0;
+        }
+        // Break unusually long paragraphs only at sentence boundaries.
+        if (paragraph.length > MAX_CHARS) {
+          const pieces = chunkText(paragraph, MAX_CHARS);
+          pieces.forEach((piece) => {
+            if (pageParagraphs.length) chunkedSections.push({ heading: section.heading, lines: pageParagraphs.join('\n\n').split('\n') });
+            chunkedSections.push({ heading: section.heading, lines: piece.split('\n') });
+            pageParagraphs = [];
+            pageChars = 0;
+          });
+        } else {
+          pageParagraphs.push(paragraph);
+          pageChars += paragraph.length;
+        }
+      });
+      if (pageParagraphs.length) {
+        chunkedSections.push({ heading: section.heading, lines: pageParagraphs.join('\n\n').split('\n') });
       }
     }
   });
@@ -3227,7 +3516,7 @@ function insertImportedTextAsPages(filename, text) {
     nb.pages.push({
       id: `import${Date.now()}${idx}`,
       tab: tab.replace(/_/g, ' '),
-      title: cleanHeading || docTitle,
+      title: options.lecture && !section.heading ? `${docTitle}${totalPages > 1 ? ` (${idx + 1})` : ''}` : (cleanHeading || docTitle),
       date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
       copy: copyHTML.replace(/(<br>)+$/, ''),
       blocks,
@@ -4228,6 +4517,7 @@ wireMenus();
 wireFileToNotesImport();
 wireDragAndDropImport();
 wireReadingPaneExtraction();
+wireLectureNotes();
 wireNewNotebook();
 wireQuickFilters();
 wireSidebarToggle();

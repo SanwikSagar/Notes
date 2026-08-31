@@ -330,6 +330,10 @@
             <button class="icon-btn is-muted" id="soundToggleBtn" aria-label="Unmute sounds" aria-pressed="false" title="Toggle writing &amp; page-turn sounds">
               <svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 5V4L8 9z"/><line x1="16" y1="9" x2="21" y2="15"/><line x1="21" y1="9" x2="16" y2="15"/></svg>
             </button>
+            <button class="lecture-btn" id="lectureNotesBtn" aria-label="Start live lecture notes" title="Live lecture notes">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v4M8 21h8"/></svg>
+              <span>Lecture</span>
+            </button>
             <div class="toolbar-spacer"></div>
             <div class="page-nav" id="pageNav">
               <button class="page-nav-btn" id="prevPageBtn" aria-label="Previous page">‹</button>
@@ -344,8 +348,10 @@
                 <button data-add-type="checklist">☑️ Checklist</button>
                 <button data-add-type="text">📝 Text note</button>
                 <button data-add-type="image">🖼️ Image</button>
+                <button data-add-type="video">🎬 Video to notes</button>
               </div>
               <input type="file" id="imageFileInput" accept="image/*" hidden>
+              <input type="file" id="videoFileInput" accept="video/mp4,video/webm,video/quicktime,video/mpeg,audio/mpeg,audio/mp4,audio/wav,audio/webm,audio/ogg" hidden>
             </div>
           </div>
         </div>

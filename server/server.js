@@ -63,6 +63,78 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '15mb' }));
 
+function filenameFromHeader(value) {
+  try {
+    return decodeURIComponent(value || 'lecture-recording.webm').replace(/[^a-zA-Z0-9._ -]/g, '_').slice(0, 120);
+  } catch (_) {
+    return 'lecture-recording.webm';
+  }
+}
+
+function youtubeIdFromUrl(value) {
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    if (host === 'youtu.be') return parsed.pathname.slice(1).split('/')[0];
+    if (host === 'youtube.com' || host === 'm.youtube.com') {
+      if (parsed.pathname === '/watch') return parsed.searchParams.get('v');
+      const match = parsed.pathname.match(/^\/(?:embed|shorts|live)\/([^/?]+)/);
+      return match ? match[1] : null;
+    }
+  } catch (_) { /* invalid URL falls through */ }
+  return null;
+}
+
+// Uploaded recordings are sent straight to the transcription endpoint; no
+// media is written to disk and the API key never reaches the browser.
+app.post('/api/transcribe', express.raw({ type: '*/*', limit: '26mb' }), async (req, res) => {
+  if (!process.env.OPENAI_API_KEY) return res.status(503).json({ error: 'TRANSCRIPTION_NOT_CONFIGURED' });
+  if (!req.body || !req.body.length) return res.status(400).json({ error: 'EMPTY_MEDIA_FILE' });
+  if (req.body.length > 25 * 1024 * 1024) return res.status(413).json({ error: 'MEDIA_FILE_TOO_LARGE' });
+
+  try {
+    const form = new FormData();
+    form.append('file', new Blob([req.body], { type: req.get('content-type') || 'application/octet-stream' }), filenameFromHeader(req.get('x-filename')));
+    form.append('model', process.env.OPENAI_TRANSCRIPTION_MODEL || 'gpt-4o-transcribe');
+    const language = (req.get('x-transcription-language') || '').trim();
+    if (/^[a-z]{2,3}$/i.test(language)) form.append('language', language);
+    form.append('prompt', 'This is a lecture. Preserve technical terms, names, formulas, and spoken section headings accurately.');
+
+    const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+      body: form
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      console.error('Transcription request failed:', response.status, payload.error && payload.error.message);
+      return res.status(502).json({ error: 'TRANSCRIPTION_FAILED' });
+    }
+    return res.json({ text: payload.text || '' });
+  } catch (err) {
+    console.error('Transcription request failed:', err.message);
+    return res.status(502).json({ error: 'TRANSCRIPTION_FAILED' });
+  }
+});
+
+// For public YouTube lectures, captions are much faster and preserve the
+// original timing/wording. The library only reads captions already exposed by
+// YouTube; it never downloads or bypasses access restrictions on video media.
+app.post('/api/online-video-transcript', async (req, res) => {
+  const videoId = youtubeIdFromUrl(req.body && req.body.url);
+  if (!videoId || !/^[\w-]{11}$/.test(videoId)) return res.status(400).json({ error: 'UNSUPPORTED_VIDEO_HOST' });
+  try {
+    const { fetchTranscript } = require('youtube-transcript');
+    const transcript = await fetchTranscript(videoId);
+    const text = transcript.map((part) => part.text || '').filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+    if (!text) return res.status(404).json({ error: 'NO_CAPTIONS_FOUND' });
+    return res.json({ title: `YouTube lecture ${videoId}`, text });
+  } catch (err) {
+    console.warn('YouTube caption retrieval failed:', err.message);
+    return res.status(404).json({ error: 'NO_CAPTIONS_FOUND' });
+  }
+});
+
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, firebaseReady });
 });

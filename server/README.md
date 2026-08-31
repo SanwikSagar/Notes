@@ -58,6 +58,18 @@ npm install
 npm start
 ```
 
+### Optional: video lecture notes
+
+Set `OPENAI_API_KEY` on the server to enable transcription for uploaded video
+or audio recordings (the key must never be placed in the browser). The app
+uses `gpt-4o-transcribe` by default; set `OPENAI_TRANSCRIPTION_MODEL` to use a
+different supported transcription model.
+
+Public YouTube links use any captions that YouTube makes available. Videos
+without captions, private videos, and other streaming platforms cannot be
+downloaded by this app; use the platform's download/export feature and upload
+the resulting MP4, WebM, M4A, or MP3 instead.
+
 Server runs at:
 
 ```
