@@ -4669,6 +4669,24 @@ function openAccountAuthModal() {
   });
 }
 
+function openProfileModal() {
+  const user = window.firebaseAuth && window.firebaseAuth.currentUser;
+  const username = localStorage.getItem(AUTH_USER_KEY) || user?.email || 'Account';
+  const email = user?.email || 'Email unavailable';
+  const provider = user?.providerData?.[0]?.providerId === 'google.com' ? 'Google' : 'Email and password';
+  const initials = username.trim().split(/\s+/).slice(0, 2).map((part) => part.charAt(0)).join('').toUpperCase() || '?';
+  openModal(`<div class="profile-modal-head"><span class="profile-modal-avatar">${escapeHtml(initials)}</span><div><h3>${escapeHtml(username)}</h3><p>${escapeHtml(email)}</p></div></div><div class="profile-details"><div><span>Sign-in method</span><strong>${escapeHtml(provider)}</strong></div><div><span>Cloud sync</span><strong>Enabled</strong></div></div><div class="modal-actions"><button class="modal-btn cancel" data-modal-close>Close</button><button class="modal-btn confirm" id="profileSyncBtn">Sync now</button></div>`, {
+    onOpen: (box) => {
+      box.querySelector('#profileSyncBtn')?.addEventListener('click', async () => {
+        const button = box.querySelector('#profileSyncBtn');
+        button.disabled = true;
+        try { await flushCloudSync(); button.textContent = 'Synced'; }
+        finally { button.disabled = false; }
+      });
+    }
+  });
+}
+
 function wireAccountMenu() {
   const btn = document.querySelector('#accountBtn');
   const menu = document.querySelector('#accountMenu');
@@ -4715,6 +4733,11 @@ function wireAccountMenu() {
     setAuth(null, null);
     refreshAccountUI();
     showAuthGate();
+  });
+
+  document.querySelector('#accountProfileIn')?.addEventListener('click', () => {
+    menu.hidden = true;
+    openProfileModal();
   });
 
   document.addEventListener('click', () => { menu.hidden = true; });
@@ -4798,4 +4821,7 @@ wireAutosave();
 wireAccountMenu();
 wireDashboard();
 wireNotebookDropdown();
-document.querySelector('#canvasAvatar')?.addEventListener('click', () => document.querySelector('#accountBtn')?.click());
+document.querySelector('#canvasAvatar')?.addEventListener('click', () => {
+  if (getAuthToken()) openProfileModal();
+  else document.querySelector('#accountBtn')?.click();
+});
