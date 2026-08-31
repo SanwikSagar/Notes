@@ -8,7 +8,7 @@ const AUTH_TOKEN_KEY = 'drift-auth-token';
 const AUTH_USER_KEY = 'drift-auth-username';
 
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
+const FIREBASE_CONFIG = {
   apiKey: "AIzaSyASt9fkEIFe0fJyFV83iA9KJsROXzMsjJQ",
   authDomain: "panne-notes.firebaseapp.com",
   projectId: "panne-notes",
@@ -79,6 +79,9 @@ function mapFirebaseError(err) {
   }
   if (code === 'auth/email-already-in-use') return 'That email is already in use.';
   if (code === 'auth/popup-closed-by-user') return 'Google sign-in was canceled.';
+  if (code === 'auth/popup-blocked') return 'Your browser blocked the Google sign-in window. Allow pop-ups for this site and try again.';
+  if (code === 'auth/unauthorized-domain') return 'This site is not authorized in Firebase. Add your current domain under Authentication → Settings → Authorized domains.';
+  if (code === 'auth/account-exists-with-different-credential') return 'An account already exists with this email. Sign in using the original method.';
   if (code === 'auth/too-many-requests') return 'Too many attempts. Try again in a moment.';
   if (code === 'auth/invalid-email') return 'Please enter a valid email address.';
   if (code === 'auth/weak-password') return 'Password should be at least 6 characters.';
