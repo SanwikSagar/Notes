@@ -1,1 +1,1 @@
-export const onRequestGet = async () => Response.json({ ok: true, runtime: 'cloudflare-pages', firebase: 'client-side' });
+export const onRequestGet = async () => Response.json({ ok: true, runtime: 'cloudflare-worker', firebase: 'client-side' });
