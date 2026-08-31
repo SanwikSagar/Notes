@@ -55,6 +55,14 @@ function showAuthGate() {
 
 function showError(message) {
   const box = document.getElementById('authError');
+  box.classList.remove('auth-setup-note');
+  box.textContent = message;
+  box.hidden = false;
+}
+
+function showSetupMessage(message) {
+  const box = document.getElementById('authError');
+  box.classList.add('auth-setup-note');
   box.textContent = message;
   box.hidden = false;
 }
@@ -167,7 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (!firebaseAvailable) {
     const toggleLabel = document.querySelector('#showRegister').closest('label');
     if (toggleLabel) toggleLabel.hidden = true;
-    showError('Cloud sign-in is not configured yet. You can continue in offline mode; add your Firebase web configuration in auth.js before deploying accounts and sync.');
+    showSetupMessage('Offline mode is ready. Add your Firebase web configuration before deploying accounts and cloud sync.');
   }
 
   document.getElementById('skipAuthLink').addEventListener('click', (e) => {

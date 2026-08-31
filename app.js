@@ -2077,7 +2077,7 @@ async function transcribeVideoToNotes(file) {
     openVideoTranscriptReview(file.name, payload.text);
   } catch (error) {
     const message = error.message === 'TRANSCRIPTION_NOT_CONFIGURED'
-      ? 'Video transcription needs a server-side OPENAI_API_KEY. See server/README.md for setup.'
+      ? 'Video transcription needs an OPENAI_API_KEY secret in your Cloudflare Pages project settings.'
       : error.message === 'NO_SPEECH_FOUND'
         ? 'No clear speech was found in this recording.'
         : 'The video could not be transcribed. Try an MP4, WebM, M4A, or MP3 file under 25 MB.';
@@ -2097,7 +2097,7 @@ async function transcribeOnlineVideoToNotes(url) {
     if (!response.ok) {
       // A static host commonly returns an HTML 404 for /api. Give the user a
       // setup message instead of pretending that the video has no captions.
-      const apiError = payload.error || (response.status === 404 ? 'VIDEO_API_UNAVAILABLE' : 'ONLINE_TRANSCRIPT_FAILED');
+      const apiError = payload.error || (response.status === 404 ? 'VIDEO_API_UNAVAILABLE' : `ONLINE_TRANSCRIPT_HTTP_${response.status}`);
       throw new Error(apiError);
     }
     if (!payload.text || !payload.text.trim()) throw new Error('NO_CAPTIONS_FOUND');
@@ -2109,10 +2109,12 @@ async function transcribeOnlineVideoToNotes(url) {
       : errorCode === 'NO_CAPTIONS_FOUND'
         ? 'No captions were available for this video. Download the recording and use Upload file to transcribe its audio.'
         : errorCode === 'VIDEO_API_UNAVAILABLE' || errorCode === 'Failed to fetch'
-          ? 'The video-notes service is not running at this app address. Start the server, then open the app from http://localhost:8787 instead of opening index.html or a separate live-preview server.'
+          ? 'The Cloudflare Pages API is unavailable at this app address. Deploy the latest build with the functions folder, then try again.'
           : errorCode === 'CAPTION_SERVICE_UNAVAILABLE'
-            ? 'The caption service is temporarily unavailable. Restart the app server after running npm install in the server folder, then try again.'
-            : 'The lecture transcript could not be retrieved. Confirm that the video is public, then try again.';
+            ? 'The YouTube caption service could not complete this request. Check your Cloudflare Pages Function logs, then try another public video with captions.'
+            : errorCode && errorCode.startsWith('ONLINE_TRANSCRIPT_HTTP_')
+              ? `The video-notes API returned ${escapeHtml(errorCode.replace('ONLINE_TRANSCRIPT_HTTP_', 'HTTP '))}. Redeploy the latest Cloudflare Pages build, then check its Function logs.`
+              : 'The lecture transcript could not be retrieved. Check the Cloudflare Pages Function logs for the exact error, then try again.';
     openModal(`<h3>Couldn’t get lecture notes</h3><p>${escapeHtml(message)}</p><div class="modal-actions"><button class="modal-btn confirm" data-modal-close>OK</button></div>`);
   }
 }
