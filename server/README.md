@@ -53,7 +53,13 @@ Example (PowerShell):
 $env:GOOGLE_APPLICATION_CREDENTIALS = "E:\path\to\firebase-service-account.json"
 ```
 
-## 3) Install and run
+## 3) Deploy on Vercel
+
+The repository includes Vercel serverless functions in `../api` for health checks, YouTube captions, and uploaded-media transcription. Vercel installs the root dependencies automatically; Node/npm does not need to be installed on your computer for a Git-based deployment.
+
+In Vercel, import the repository and set `OPENAI_API_KEY` for uploaded media transcription. Optionally set `OPENAI_TRANSCRIPTION_MODEL` to override the default model.
+
+Configure the Firebase web app values in `auth.js`, or inject `window.CREATIVE_NOTES_FIREBASE_CONFIG` before that file loads.
 
 ```bash
 cd server
