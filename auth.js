@@ -7,11 +7,15 @@
 const AUTH_TOKEN_KEY = 'drift-auth-token';
 const AUTH_USER_KEY = 'drift-auth-username';
 
-const FIREBASE_CONFIG = window.CREATIVE_NOTES_FIREBASE_CONFIG || {
-  apiKey: 'REPLACE_WITH_FIREBASE_API_KEY',
-  authDomain: 'REPLACE_WITH_PROJECT.firebaseapp.com',
-  projectId: 'REPLACE_WITH_PROJECT_ID',
-  appId: 'REPLACE_WITH_FIREBASE_APP_ID'
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyASt9fkEIFe0fJyFV83iA9KJsROXzMsjJQ",
+  authDomain: "panne-notes.firebaseapp.com",
+  projectId: "panne-notes",
+  storageBucket: "panne-notes.firebasestorage.app",
+  messagingSenderId: "700399831481",
+  appId: "1:700399831481:web:4e0b208b2fdc455d75ce68",
+  measurementId: "G-GSHV6S95LJ"
 };
 
 const firebaseConfigured = Object.values(FIREBASE_CONFIG).every((value) => value && !value.startsWith('REPLACE_WITH_'));
