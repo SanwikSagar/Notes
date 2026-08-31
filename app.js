@@ -4033,12 +4033,60 @@ function wireNewNotebook() {
   });
 }
 
+function renderDashboard() {
+  const dashboard = document.querySelector('#dashboardPanel');
+  if (!dashboard) return;
+  const entries = Object.entries(notebooks);
+  const pageCount = entries.reduce((total, [, notebook]) => total + (notebook.pages || []).length, 0);
+  const noteCount = entries.reduce((total, [, notebook]) => total + (notebook.pages || []).filter((page) => page.copy || (page.blocks || []).length || (page.stickies || []).length).length, 0);
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const username = localStorage.getItem(AUTH_USER_KEY) || 'there';
+  const greetingNode = document.querySelector('#dashboardGreeting');
+  if (greetingNode) greetingNode.textContent = `${greeting}, ${username.split(/\s|@/)[0]}`;
+  const stats = document.querySelector('#dashboardStats');
+  if (stats) stats.innerHTML = `<div class="dashboard-stat"><strong>${entries.length}</strong><span>Notebooks</span></div><div class="dashboard-stat"><strong>${pageCount}</strong><span>Pages</span></div><div class="dashboard-stat"><strong>${noteCount}</strong><span>Notes started</span></div>`;
+  const recent = (state.recents || []).map((id) => entries.find(([key]) => key === id)).filter(Boolean).slice(0, 4);
+  const recentNode = document.querySelector('#dashboardRecentList');
+  if (recentNode) recentNode.innerHTML = recent.length ? recent.map(([id, nb]) => `<button class="dashboard-recent-item" data-dashboard-notebook="${escapeHtml(id)}"><span class="dot dot-${safeNotebookColor(nb.color)}"></span><span><strong>${escapeHtml(nb.label)}</strong><small>${(nb.pages || []).length} ${(nb.pages || []).length === 1 ? 'page' : 'pages'}</small></span><span class="dashboard-arrow">›</span></button>`).join('') : '<p class="dashboard-empty">Your recent notes will appear here.</p>';
+  const notebookNode = document.querySelector('#dashboardNotebookList');
+  if (notebookNode) notebookNode.innerHTML = entries.slice(0, 5).map(([id, nb]) => `<button class="dashboard-notebook-item" data-dashboard-notebook="${escapeHtml(id)}"><span class="dot dot-${safeNotebookColor(nb.color)}"></span><span>${escapeHtml(nb.label)}</span><small>${(nb.pages || []).length} pages</small></button>`).join('') || '<p class="dashboard-empty">Create your first notebook.</p>';
+  dashboard.querySelectorAll('[data-dashboard-notebook]').forEach((button) => button.addEventListener('click', () => {
+    const id = button.dataset.dashboardNotebook;
+    if (!notebooks[id]) return;
+    state.notebookId = id; state.pageIndex = 0; state.quickFilter = 'all';
+    dashboard.hidden = true;
+    document.querySelector('.view-panel[data-view="notes"]').classList.add('is-active');
+    document.querySelectorAll('[data-quick]').forEach((item) => item.classList.toggle('is-active', item.dataset.quick === 'all'));
+    reRenderEverything();
+  }));
+}
+
+function showDashboard() {
+  document.querySelector('#dashboardPanel').hidden = false;
+  document.querySelectorAll('.view-panel').forEach((panel) => panel.classList.remove('is-active'));
+  renderDashboard();
+  closeSidebar();
+}
+
+function wireDashboard() {
+  document.querySelector('#dashboardLectureBtn')?.addEventListener('click', () => document.querySelector('#lectureNotesBtn')?.click());
+  document.querySelector('#dashboardAllNotesBtn')?.addEventListener('click', () => document.querySelector('[data-quick="all"]')?.click());
+  document.querySelector('#dashboardNewNotebookBtn')?.addEventListener('click', () => document.querySelector('#newNotebookBtn')?.click());
+}
+
 function wireQuickFilters() {
   document.querySelectorAll('[data-quick]').forEach((item) => {
     item.addEventListener('click', () => {
       document.querySelectorAll('[data-quick]').forEach((i) => i.classList.remove('is-active'));
       item.classList.add('is-active');
       state.quickFilter = item.dataset.quick;
+      if (state.quickFilter === 'dashboard') {
+        showDashboard();
+        return;
+      }
+      document.querySelector('#dashboardPanel').hidden = true;
+      document.querySelector('.view-panel[data-view="notes"]').classList.add('is-active');
       renderNotebookList();
       closeSidebar();
     });
@@ -4554,14 +4602,25 @@ function refreshAccountUI() {
   const signInBtn = document.querySelector('#accountSignInBtn');
   const syncBtn = document.querySelector('#accountSyncNowBtn');
   const signOutBtn = document.querySelector('#accountSignOutBtn');
+  const canvasAvatar = document.querySelector('#canvasAvatar');
   const signedIn = Boolean(getAuthToken() && username && username.trim());
 
   if (dot) dot.hidden = !signedIn;
   if (profileOut) profileOut.hidden = signedIn;
   if (profileIn) profileIn.hidden = !signedIn;
   if (signedIn) {
-    if (avatar) avatar.textContent = username.trim().charAt(0).toUpperCase() || '?';
+    const initials = username.trim().split(/\s+/).slice(0, 2).map((part) => part.charAt(0)).join('').toUpperCase() || '?';
+    if (avatar) avatar.textContent = initials;
+    if (canvasAvatar) {
+      canvasAvatar.textContent = initials;
+      canvasAvatar.title = `${username} · Open profile`;
+      canvasAvatar.setAttribute('aria-label', `${username} · Open profile`);
+    }
     if (usernameLabel) usernameLabel.textContent = username;
+  } else if (canvasAvatar) {
+    canvasAvatar.textContent = '?';
+    canvasAvatar.title = 'Sign in to your account';
+    canvasAvatar.setAttribute('aria-label', 'Sign in to your account');
   }
   if (signInBtn) signInBtn.textContent = signedIn ? 'Switch account' : 'Sign in / Create account';
   if (syncBtn) syncBtn.hidden = !signedIn;
@@ -4692,6 +4751,7 @@ renderPage();
 renderFlashcard();
 renderMindmap();
 renderReview();
+renderDashboard();
 function wirePageTabReveal() {
   document.addEventListener('click', (event) => {
     if (event.target.closest('.page-tabs-row')) return;
@@ -4736,4 +4796,6 @@ wireEditableAutosave();
 wireSoundToggle();
 wireAutosave();
 wireAccountMenu();
+wireDashboard();
 wireNotebookDropdown();
+document.querySelector('#canvasAvatar')?.addEventListener('click', () => document.querySelector('#accountBtn')?.click());

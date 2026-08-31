@@ -179,6 +179,7 @@
         <div class="sidebar-section">
           <p class="sidebar-label">Notebooks</p>
           <ul class="nav-list">
+            <li data-quick="dashboard"><span class="nav-icon">⌂</span><span class="nav-text">Home</span></li>
             <li class="is-active" data-quick="all"><span class="nav-icon">▤</span><span class="nav-text">All Notes</span></li>
             <li data-quick="recents"><span class="nav-icon">◷</span><span class="nav-text">Recents</span></li>
             <li data-quick="favorites"><span class="nav-icon">☆</span><span class="nav-text">Favorites</span></li>
@@ -216,6 +217,18 @@
       </div>
 
       <div class="page-area">
+
+        <section class="dashboard-panel" id="dashboardPanel" hidden>
+          <div class="dashboard-hero">
+            <div><p class="dashboard-eyebrow">YOUR STUDY SPACE</p><h1 id="dashboardGreeting">Welcome back</h1><p>Pick up where you left off or start a fresh lecture note.</p></div>
+            <button class="dashboard-primary" id="dashboardLectureBtn">＋ Start lecture notes</button>
+          </div>
+          <div class="dashboard-stats" id="dashboardStats"></div>
+          <div class="dashboard-grid">
+            <section class="dashboard-card dashboard-recent-card"><div class="dashboard-card-head"><h2>Continue learning</h2><button class="dashboard-link" id="dashboardAllNotesBtn">View all notes</button></div><div id="dashboardRecentList" class="dashboard-recent-list"></div></section>
+            <section class="dashboard-card"><div class="dashboard-card-head"><h2>Your notebooks</h2><button class="dashboard-link" id="dashboardNewNotebookBtn">＋ New</button></div><div id="dashboardNotebookList" class="dashboard-notebook-list"></div></section>
+          </div>
+        </section>
 
         <div class="view-panel is-active" data-view="notes">
           <div class="page-tabs-row" id="pageTabsRow">
@@ -326,7 +339,7 @@
           </div>
 
           <div class="canvas-toolbar">
-            <button class="avatar" aria-label="Your profile">AR</button>
+            <button class="avatar" id="canvasAvatar" aria-label="Open your profile" title="Open your profile">?</button>
             <button class="icon-btn is-muted" id="soundToggleBtn" aria-label="Unmute sounds" aria-pressed="false" title="Toggle writing &amp; page-turn sounds">
               <svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 5V4L8 9z"/><line x1="16" y1="9" x2="21" y2="15"/><line x1="21" y1="9" x2="16" y2="15"/></svg>
             </button>
