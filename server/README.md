@@ -31,6 +31,9 @@ Cloud Firestore.
 
 Edit `../auth.js` and replace the `FIREBASE_CONFIG` placeholders with your
 real Firebase web app values (`apiKey`, `authDomain`, `projectId`, `appId`).
+For a deployment-specific configuration, define
+`window.CREATIVE_NOTES_FIREBASE_CONFIG` before `auth.js` loads; the app will
+otherwise remain safely usable in offline mode.
 
 ## 2) Configure server Firebase credentials
 
@@ -69,6 +72,10 @@ Public YouTube links use any captions that YouTube makes available. Videos
 without captions, private videos, and other streaming platforms cannot be
 downloaded by this app; use the platform's download/export feature and upload
 the resulting MP4, WebM, M4A, or MP3 instead.
+
+Open the app through this server at `http://localhost:8787`. Opening
+`index.html` directly or through a separate static preview will not provide the
+`/api` routes used for video transcription and captions.
 
 Server runs at:
 

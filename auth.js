@@ -7,26 +7,33 @@
 const AUTH_TOKEN_KEY = 'drift-auth-token';
 const AUTH_USER_KEY = 'drift-auth-username';
 
-const FIREBASE_CONFIG = {
+const FIREBASE_CONFIG = window.CREATIVE_NOTES_FIREBASE_CONFIG || {
   apiKey: 'REPLACE_WITH_FIREBASE_API_KEY',
   authDomain: 'REPLACE_WITH_PROJECT.firebaseapp.com',
   projectId: 'REPLACE_WITH_PROJECT_ID',
   appId: 'REPLACE_WITH_FIREBASE_APP_ID'
 };
 
-if (!window.firebase) {
-  throw new Error('Firebase SDK did not load. Check index.html script tags.');
-}
+const firebaseConfigured = Object.values(FIREBASE_CONFIG).every((value) => value && !value.startsWith('REPLACE_WITH_'));
+const firebaseAvailable = Boolean(window.firebase && firebaseConfigured);
+let firebaseAuth = null;
+let firestoreDb = null;
+let googleProvider = null;
 
-if (!firebase.apps.length) {
-  firebase.initializeApp(FIREBASE_CONFIG);
+if (firebaseAvailable) {
+  if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+  firebaseAuth = firebase.auth();
+  firestoreDb = firebase.firestore();
+  googleProvider = new firebase.auth.GoogleAuthProvider();
+  // Cloud Firestore keeps queued writes locally, so notes can sync after a
+  // connection returns instead of silently losing an offline update.
+  firestoreDb.enablePersistence({ synchronizeTabs: true }).catch(() => { /* Another tab or browser policy may own persistence. */ });
+  window.firebaseAuth = firebaseAuth;
+  window.firestoreDb = firestoreDb;
+} else {
+  window.firebaseAuth = null;
+  window.firestoreDb = null;
 }
-
-const firebaseAuth = firebase.auth();
-const firestoreDb = firebase.firestore();
-const googleProvider = new firebase.auth.GoogleAuthProvider();
-window.firebaseAuth = firebaseAuth;
-window.firestoreDb = firestoreDb;
 
 function saveSession(token, username) {
   localStorage.setItem(AUTH_TOKEN_KEY, token || '');
@@ -69,6 +76,10 @@ function mapFirebaseError(err) {
 function renderGoogleButton(containerId) {
   const container = document.getElementById(containerId);
   if (!container) return;
+  if (!firebaseAvailable) {
+    container.hidden = true;
+    return;
+  }
   container.innerHTML = '<button type="button" class="auth-submit auth-google-btn" id="googleSignInBtn">Continue with Google</button>';
   container.querySelector('#googleSignInBtn').addEventListener('click', async () => {
     document.getElementById('authError').hidden = true;
@@ -82,6 +93,10 @@ function renderGoogleButton(containerId) {
 
 function setupForm(formId, mode) {
   const form = document.getElementById(formId);
+  if (!firebaseAvailable) {
+    form.hidden = true;
+    return;
+  }
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     document.getElementById('authError').hidden = true;
@@ -112,7 +127,7 @@ function setupForm(formId, mode) {
   });
 }
 
-firebaseAuth.onIdTokenChanged(async (user) => {
+if (firebaseAvailable) firebaseAuth.onIdTokenChanged(async (user) => {
   if (!user) {
     clearSession();
     showAuthGate();
@@ -148,6 +163,12 @@ document.addEventListener('DOMContentLoaded', () => {
   renderGoogleButton('googleBtn');
   setupForm('loginForm', 'signin');
   setupForm('registerForm', 'signup');
+
+  if (!firebaseAvailable) {
+    const toggleLabel = document.querySelector('#showRegister').closest('label');
+    if (toggleLabel) toggleLabel.hidden = true;
+    showError('Cloud sign-in is not configured yet. You can continue in offline mode; add your Firebase web configuration in auth.js before deploying accounts and sync.');
+  }
 
   document.getElementById('skipAuthLink').addEventListener('click', (e) => {
     e.preventDefault();

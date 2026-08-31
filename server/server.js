@@ -11,6 +11,7 @@ const admin = require('firebase-admin');
 
 const PORT = process.env.PORT || 8787;
 const NOTES_COLLECTION = process.env.FIRESTORE_NOTES_COLLECTION || 'drift_notes';
+const CORS_ORIGINS = new Set((process.env.CORS_ORIGINS || '').split(',').map((value) => value.trim()).filter(Boolean));
 
 function initFirebaseAdmin() {
   if (admin.apps.length) return;
@@ -60,8 +61,53 @@ async function requireAuth(req, res, next) {
 }
 
 const app = express();
-app.use(cors());
+app.disable('x-powered-by');
+app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : false);
+app.use(cors({
+  origin(origin, callback) {
+    // Same-origin browser requests have no Origin header and do not need CORS.
+    if (!origin || CORS_ORIGINS.has(origin)) return callback(null, true);
+    return callback(new Error('Origin is not allowed by CORS.'));
+  },
+  methods: ['GET', 'POST', 'PUT'],
+  allowedHeaders: ['Authorization', 'Content-Type', 'X-Filename', 'X-Transcription-Language'],
+  maxAge: 86400
+}));
+app.use((req, res, next) => {
+  res.set({
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'X-Frame-Options': 'DENY',
+    'Permissions-Policy': 'camera=(), geolocation=(), payment=(), usb=()'
+  });
+  next();
+});
 app.use(express.json({ limit: '15mb' }));
+
+function createRateLimit({ windowMs, max }) {
+  const clients = new Map();
+  return (req, res, next) => {
+    const now = Date.now();
+    const key = req.ip || req.socket.remoteAddress || 'unknown';
+    const entry = clients.get(key);
+    const current = !entry || now - entry.startedAt >= windowMs ? { startedAt: now, count: 0 } : entry;
+    current.count += 1;
+    clients.set(key, current);
+    if (current.count > max) {
+      const retryAfter = Math.max(1, Math.ceil((windowMs - (now - current.startedAt)) / 1000));
+      res.set('Retry-After', String(retryAfter));
+      return res.status(429).json({ error: 'RATE_LIMITED', retryAfter });
+    }
+    // Avoid retaining inactive addresses indefinitely in a long-running process.
+    if (clients.size > 2000) {
+      for (const [client, value] of clients) if (now - value.startedAt >= windowMs) clients.delete(client);
+    }
+    return next();
+  };
+}
+
+const transcriptionRateLimit = createRateLimit({ windowMs: 10 * 60 * 1000, max: 8 });
+const captionRateLimit = createRateLimit({ windowMs: 60 * 1000, max: 30 });
 
 function filenameFromHeader(value) {
   try {
@@ -76,7 +122,7 @@ function youtubeIdFromUrl(value) {
     const parsed = new URL(value);
     const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
     if (host === 'youtu.be') return parsed.pathname.slice(1).split('/')[0];
-    if (host === 'youtube.com' || host === 'm.youtube.com') {
+    if (['youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtube-nocookie.com'].includes(host)) {
       if (parsed.pathname === '/watch') return parsed.searchParams.get('v');
       const match = parsed.pathname.match(/^\/(?:embed|shorts|live)\/([^/?]+)/);
       return match ? match[1] : null;
@@ -87,7 +133,7 @@ function youtubeIdFromUrl(value) {
 
 // Uploaded recordings are sent straight to the transcription endpoint; no
 // media is written to disk and the API key never reaches the browser.
-app.post('/api/transcribe', express.raw({ type: '*/*', limit: '26mb' }), async (req, res) => {
+app.post('/api/transcribe', transcriptionRateLimit, express.raw({ type: '*/*', limit: '26mb' }), async (req, res) => {
   if (!process.env.OPENAI_API_KEY) return res.status(503).json({ error: 'TRANSCRIPTION_NOT_CONFIGURED' });
   if (!req.body || !req.body.length) return res.status(400).json({ error: 'EMPTY_MEDIA_FILE' });
   if (req.body.length > 25 * 1024 * 1024) return res.status(413).json({ error: 'MEDIA_FILE_TOO_LARGE' });
@@ -120,18 +166,27 @@ app.post('/api/transcribe', express.raw({ type: '*/*', limit: '26mb' }), async (
 // For public YouTube lectures, captions are much faster and preserve the
 // original timing/wording. The library only reads captions already exposed by
 // YouTube; it never downloads or bypasses access restrictions on video media.
-app.post('/api/online-video-transcript', async (req, res) => {
+app.post('/api/online-video-transcript', captionRateLimit, async (req, res) => {
   const videoId = youtubeIdFromUrl(req.body && req.body.url);
   if (!videoId || !/^[\w-]{11}$/.test(videoId)) return res.status(400).json({ error: 'UNSUPPORTED_VIDEO_HOST' });
   try {
     const { fetchTranscript } = require('youtube-transcript');
+    if (typeof fetchTranscript !== 'function') {
+      console.error('youtube-transcript is installed but does not expose fetchTranscript. Run npm install in the server folder.');
+      return res.status(503).json({ error: 'CAPTION_SERVICE_UNAVAILABLE' });
+    }
+    // Do not force the browser language here: a lecture may only expose captions
+    // in its original language, and the package can choose the available track.
     const transcript = await fetchTranscript(videoId);
     const text = transcript.map((part) => part.text || '').filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
     if (!text) return res.status(404).json({ error: 'NO_CAPTIONS_FOUND' });
     return res.json({ title: `YouTube lecture ${videoId}`, text });
   } catch (err) {
     console.warn('YouTube caption retrieval failed:', err.message);
-    return res.status(404).json({ error: 'NO_CAPTIONS_FOUND' });
+    const knownCaptionFailure = /transcript|caption|subtitle|video unavailable|private|not found/i.test(err.message || '');
+    return res.status(knownCaptionFailure ? 404 : 502).json({
+      error: knownCaptionFailure ? 'NO_CAPTIONS_FOUND' : 'CAPTION_SERVICE_UNAVAILABLE'
+    });
   }
 });
 
@@ -179,7 +234,20 @@ app.use((req, res, next) => {
   if (req.path.startsWith('/server')) return res.status(404).end();
   next();
 });
-app.use(express.static(APP_ROOT));
+app.use(express.static(APP_ROOT, {
+  maxAge: '1d',
+  setHeaders(res, filePath) {
+    // HTML must always revalidate so feature and security updates reach users.
+    if (filePath.endsWith('.html')) res.set('Cache-Control', 'no-cache');
+  }
+}));
+
+app.use((err, req, res, next) => {
+  if (err && err.type === 'entity.too.large') return res.status(413).json({ error: 'REQUEST_TOO_LARGE' });
+  if (err && err.message === 'Origin is not allowed by CORS.') return res.status(403).json({ error: 'CORS_ORIGIN_NOT_ALLOWED' });
+  console.error('Unhandled server error:', err && err.message);
+  return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR' });
+});
 
 app.listen(PORT, () => {
   console.log(`Drift notes server running at http://localhost:${PORT}`);

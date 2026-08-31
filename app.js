@@ -631,9 +631,15 @@ function currentPage() {
 const lectureDictation = {
   recognition: null,
   isListening: false,
+  isStarting: false,
   shouldContinue: false,
   finalText: '',
-  interimText: ''
+  interimText: '',
+  language: '',
+  statusMessage: '',
+  statusType: '',
+  restartTimer: null,
+  restartAttempts: 0
 };
 
 function normaliseDictation(text) {
@@ -650,6 +656,21 @@ function lectureTranscriptHtml() {
   return `${finalText}${interimText ? `<span class="lecture-interim">${finalText ? ' ' : ''}${interimText}</span>` : ''}`;
 }
 
+function setLectureStatus(message, type = '') {
+  lectureDictation.statusMessage = message;
+  lectureDictation.statusType = type;
+}
+
+function defaultLectureLanguage() {
+  const browserLanguage = (navigator.language || 'en-US').replace('_', '-');
+  const knownLanguage = document.querySelector(`#lectureLanguage option[value="${browserLanguage}"]`);
+  return knownLanguage ? browserLanguage : 'en-US';
+}
+
+function isLocalOrSecurePage() {
+  return window.isSecureContext || ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
+}
+
 function refreshLectureUI() {
   const transcript = document.querySelector('#lectureTranscript');
   const status = document.querySelector('#lectureStatus');
@@ -661,37 +682,119 @@ function refreshLectureUI() {
     transcript.scrollTop = transcript.scrollHeight;
   }
   if (status) {
-    status.textContent = lectureDictation.isListening ? 'Listening — words appear as your lecturer speaks.' : 'Ready. You can edit any wording before turning it into notes.';
-    status.classList.toggle('is-live', lectureDictation.isListening);
+    const defaultMessage = lectureDictation.isStarting
+      ? 'Requesting microphone access…'
+      : lectureDictation.isListening
+        ? 'Listening — words appear as your lecturer speaks.'
+        : 'Ready. You can edit wording before turning it into notes.';
+    status.textContent = lectureDictation.statusMessage || defaultMessage;
+    status.classList.toggle('is-live', lectureDictation.isListening || lectureDictation.statusType === 'live');
+    status.classList.toggle('is-error', lectureDictation.statusType === 'error');
   }
-  if (start) start.textContent = lectureDictation.isListening ? 'Pause' : 'Start listening';
+  if (start) {
+    start.textContent = lectureDictation.isStarting ? 'Connecting…' : lectureDictation.isListening ? 'Pause listening' : 'Start listening';
+    start.disabled = lectureDictation.isStarting;
+  }
   if (finish) finish.disabled = !lectureDictation.finalText.trim();
+  const language = document.querySelector('#lectureLanguage');
+  if (language) language.disabled = lectureDictation.isListening || lectureDictation.isStarting;
   if (toolbarBtn) toolbarBtn.classList.toggle('is-recording', lectureDictation.isListening);
 }
 
 function stopLectureDictation() {
   lectureDictation.shouldContinue = false;
   lectureDictation.isListening = false;
-  if (lectureDictation.recognition) lectureDictation.recognition.stop();
+  lectureDictation.isStarting = false;
+  lectureDictation.interimText = '';
+  lectureDictation.restartAttempts = 0;
+  clearTimeout(lectureDictation.restartTimer);
+  lectureDictation.restartTimer = null;
+  const recognition = lectureDictation.recognition;
+  lectureDictation.recognition = null;
+  if (recognition) {
+    try { recognition.abort(); } catch (_) { /* Recognition may already have ended. */ }
+  }
   refreshLectureUI();
 }
 
-function startLectureDictation(language) {
+function lectureErrorMessage(error) {
+  const messages = {
+    'not-allowed': 'Microphone access is blocked. Allow microphone permission in your browser, then try again.',
+    'service-not-allowed': 'Speech recognition is blocked by your browser. Check the microphone and site permissions, then try again.',
+    'audio-capture': 'No microphone was found. Connect one, then start listening again.',
+    'network': 'Speech recognition could not reach its service. Check your internet connection and try again.',
+    'language-not-supported': 'This speech language is not available in your browser. Choose another language and try again.',
+    'bad-grammar': 'The browser speech service rejected this session. Please start listening again.'
+  };
+  return messages[error] || 'Dictation stopped unexpectedly. Please start listening again.';
+}
+
+async function requestLectureMicrophone() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+  });
+  stream.getTracks().forEach((track) => track.stop());
+}
+
+async function startLectureDictation(language, { skipMicrophoneCheck = false } = {}) {
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!Recognition) {
-    openModal('<h3>Live dictation is unavailable</h3><p>Use the latest Chrome or Edge and allow microphone access to take live lecture notes.</p><div class="modal-actions"><button class="modal-btn confirm" data-modal-close>OK</button></div>');
+    setLectureStatus('Live dictation needs the latest Chrome or Edge. This browser does not provide speech recognition.', 'error');
+    refreshLectureUI();
     return;
   }
-  if (lectureDictation.recognition) lectureDictation.recognition.stop();
+
+  if (!isLocalOrSecurePage()) {
+    setLectureStatus('Open the app through HTTPS or localhost to use your microphone. Browsers block microphone access on insecure pages.', 'error');
+    refreshLectureUI();
+    return;
+  }
+
+  if (lectureDictation.isStarting || lectureDictation.isListening) return;
+  lectureDictation.language = language || defaultLectureLanguage();
+  lectureDictation.shouldContinue = true;
+  lectureDictation.isStarting = true;
+  lectureDictation.statusMessage = '';
+  lectureDictation.statusType = '';
+  refreshLectureUI();
+
+  if (!skipMicrophoneCheck) {
+    try {
+      await requestLectureMicrophone();
+    } catch (error) {
+      lectureDictation.shouldContinue = false;
+      lectureDictation.isStarting = false;
+      const denied = error && (error.name === 'NotAllowedError' || error.name === 'SecurityError');
+      setLectureStatus(denied
+        ? 'Microphone access is blocked. Allow it in your browser, then try again.'
+        : 'We could not access a microphone. Check that one is connected and available.', 'error');
+      refreshLectureUI();
+      return;
+    }
+  }
+
+  if (!lectureDictation.shouldContinue || !document.querySelector('#lectureTranscript')) {
+    lectureDictation.isStarting = false;
+    return;
+  }
+
   const recognition = new Recognition();
   lectureDictation.recognition = recognition;
   recognition.continuous = true;
   recognition.interimResults = true;
   recognition.maxAlternatives = 3;
-  recognition.lang = language || navigator.language || 'en-US';
-  lectureDictation.shouldContinue = true;
-  recognition.onstart = () => { lectureDictation.isListening = true; refreshLectureUI(); };
+  recognition.lang = lectureDictation.language;
+  recognition.onstart = () => {
+    if (lectureDictation.recognition !== recognition) return;
+    lectureDictation.isStarting = false;
+    lectureDictation.isListening = true;
+    lectureDictation.restartAttempts = 0;
+    setLectureStatus('Listening — words appear as your lecturer speaks.', 'live');
+    refreshLectureUI();
+  };
   recognition.onresult = (event) => {
+    if (lectureDictation.recognition !== recognition) return;
     let interim = '';
     for (let i = event.resultIndex; i < event.results.length; i += 1) {
       const result = event.results[i];
@@ -704,26 +807,43 @@ function startLectureDictation(language) {
     refreshLectureUI();
   };
   recognition.onerror = (event) => {
+    if (lectureDictation.recognition !== recognition) return;
+    if (event.error === 'aborted') return;
     lectureDictation.isListening = false;
+    lectureDictation.isStarting = false;
     lectureDictation.interimText = '';
-    if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+    if (['not-allowed', 'service-not-allowed', 'audio-capture', 'network', 'language-not-supported', 'bad-grammar'].includes(event.error)) {
       lectureDictation.shouldContinue = false;
-      const status = document.querySelector('#lectureStatus');
-      if (status) status.textContent = 'Microphone access was blocked. Allow it in your browser, then try again.';
     }
+    setLectureStatus(lectureErrorMessage(event.error), event.error === 'no-speech' ? '' : 'error');
     refreshLectureUI();
   };
   recognition.onend = () => {
+    if (lectureDictation.recognition !== recognition) return;
     lectureDictation.isListening = false;
+    lectureDictation.isStarting = false;
     lectureDictation.interimText = '';
+    lectureDictation.recognition = null;
     refreshLectureUI();
-    // Browsers occasionally end a long recognition session; resume while the
-    // user has not paused it so a lecture can be captured hands-free.
+    // Browsers periodically end a recognition session. Start a clean session
+    // while the user is still recording so a lecture continues hands-free.
     if (lectureDictation.shouldContinue && document.querySelector('#lectureTranscript')) {
-      setTimeout(() => { if (lectureDictation.shouldContinue) recognition.start(); }, 180);
+      lectureDictation.restartAttempts += 1;
+      const delay = Math.min(1800, 300 + lectureDictation.restartAttempts * 180);
+      lectureDictation.restartTimer = setTimeout(() => {
+        if (lectureDictation.shouldContinue) startLectureDictation(lectureDictation.language, { skipMicrophoneCheck: true });
+      }, delay);
     }
   };
-  recognition.start();
+  try {
+    recognition.start();
+  } catch (_) {
+    lectureDictation.recognition = null;
+    lectureDictation.isStarting = false;
+    lectureDictation.shouldContinue = false;
+    setLectureStatus('Dictation could not start. Please wait a moment and try again.', 'error');
+    refreshLectureUI();
+  }
 }
 
 function createLectureNotes() {
@@ -744,7 +864,11 @@ function openLectureNotes() {
       <p>Natural live dictation with editable text. Keep the microphone near the lecturer for the best accuracy.</p>
       <div class="lecture-controls">
         <button class="modal-btn confirm" id="lectureStartBtn">Start listening</button>
-        <select id="lectureLanguage" aria-label="Dictation language"><option value="en-US">English (US)</option><option value="en-IN">English (India)</option><option value="en-GB">English (UK)</option><option value="hi-IN">Hindi</option></select>
+        <label class="lecture-language" for="lectureLanguage"><span>Spoken language</span><select id="lectureLanguage" aria-label="Dictation language">
+          <optgroup label="English"><option value="en-US">English — United States</option><option value="en-IN">English — India</option><option value="en-GB">English — United Kingdom</option><option value="en-AU">English — Australia</option><option value="en-CA">English — Canada</option></optgroup>
+          <optgroup label="Indian languages"><option value="hi-IN">Hindi — हिन्दी</option><option value="bn-IN">Bengali — বাংলা</option><option value="gu-IN">Gujarati — ગુજરાતી</option><option value="kn-IN">Kannada — ಕನ್ನಡ</option><option value="ml-IN">Malayalam — മലയാളം</option><option value="mr-IN">Marathi — मराठी</option><option value="pa-IN">Punjabi — ਪੰਜਾਬੀ</option><option value="ta-IN">Tamil — தமிழ்</option><option value="te-IN">Telugu — తెలుగు</option><option value="ur-IN">Urdu — اردو</option></optgroup>
+          <optgroup label="More languages"><option value="ar-SA">Arabic — العربية</option><option value="zh-CN">Chinese, Mandarin — 简体中文</option><option value="nl-NL">Dutch — Nederlands</option><option value="fr-FR">French — Français</option><option value="de-DE">German — Deutsch</option><option value="id-ID">Indonesian — Bahasa Indonesia</option><option value="it-IT">Italian — Italiano</option><option value="ja-JP">Japanese — 日本語</option><option value="ko-KR">Korean — 한국어</option><option value="pt-BR">Portuguese — Brasil</option><option value="ru-RU">Russian — Русский</option><option value="es-ES">Spanish — Español</option><option value="th-TH">Thai — ไทย</option><option value="tr-TR">Turkish — Türkçe</option></optgroup>
+        </select></label>
         <span class="lecture-status" id="lectureStatus">Ready. You can edit any wording before turning it into notes.</span>
       </div>
       <div class="lecture-transcript" id="lectureTranscript" contenteditable="true" role="textbox" aria-label="Live transcript" spellcheck="true"></div>
@@ -752,6 +876,7 @@ function openLectureNotes() {
       <div class="modal-actions"><button class="modal-btn cancel" data-modal-close id="lectureCancelBtn">Cancel</button><button class="modal-btn confirm" id="lectureFinishBtn">Create smart notes</button></div>
     </div>`, {
     onOpen(box) {
+      box.querySelector('#lectureLanguage').value = defaultLectureLanguage();
       box.querySelector('#lectureStartBtn').addEventListener('click', () => {
         const language = box.querySelector('#lectureLanguage').value;
         if (lectureDictation.isListening) stopLectureDictation(); else startLectureDictation(language);
@@ -793,11 +918,11 @@ function renderNotebookList() {
 
   list.innerHTML = entries.length
     ? entries.map(([id, nb]) => `
-      <li data-notebook="${id}" class="${id === state.notebookId ? 'is-active' : ''}" title="${nb.label}">
-        <span class="dot dot-${nb.color}"></span>
-        <span class="nav-text">${nb.label}</span>
-        <button class="nb-fav-btn${nb.favorite ? ' is-fav' : ''}" data-fav="${id}" aria-label="Toggle favorite" title="Favorite">★</button>
-        <button class="nb-delete-btn" data-delete-notebook="${id}" aria-label="Delete notebook" title="Delete notebook">×</button>
+      <li data-notebook="${escapeHtml(id)}" class="${id === state.notebookId ? 'is-active' : ''}" title="${escapeHtml(nb.label)}">
+        <span class="dot dot-${safeNotebookColor(nb.color)}"></span>
+        <span class="nav-text">${escapeHtml(nb.label)}</span>
+        <button class="nb-fav-btn${nb.favorite ? ' is-fav' : ''}" data-fav="${escapeHtml(id)}" aria-label="Toggle favorite" title="Favorite">★</button>
+        <button class="nb-delete-btn" data-delete-notebook="${escapeHtml(id)}" aria-label="Delete notebook" title="Delete notebook">×</button>
       </li>
     `).join('')
     : `<li class="nb-empty">${state.quickFilter === 'all' ? 'No notebooks yet.' : 'Nothing here yet.'}</li>`;
@@ -828,7 +953,7 @@ function requestDeleteNotebook(id) {
   const nb = notebooks[id];
   if (!nb || Object.keys(notebooks).length <= 1) return;
   openModal(`
-    <h3>Delete "${nb.label}"?</h3>
+    <h3>Delete "${escapeHtml(nb.label)}"?</h3>
     <p>This removes all its pages, flashcards, and mind map. This can't be undone.</p>
     <div class="modal-actions">
       <button class="modal-btn cancel" data-modal-close>Cancel</button>
@@ -878,7 +1003,7 @@ function renderPageTabs() {
   const nb = currentNotebook();
   rail.innerHTML = nb.pages.map((page, index) => `
     <div class="page-tab-wrap">
-      <button class="page-tab tab-${nb.color}${index === state.pageIndex ? ' is-active' : ''}" data-index="${index}" title="Double-click to rename">${page.tab}</button>
+      <button class="page-tab tab-${safeNotebookColor(nb.color)}${index === state.pageIndex ? ' is-active' : ''}" data-index="${index}" title="Double-click to rename">${escapeHtml(page.tab)}</button>
       <button class="page-tab-rename" data-rename-page="${index}" aria-label="Rename page">✎</button>
       ${nb.pages.length > 1 ? `<button class="page-tab-delete" data-delete-page="${index}" aria-label="Delete page">×</button>` : ''}
     </div>
@@ -923,8 +1048,8 @@ function openRenamePageModal(index) {
   if (!page) return;
   openModal(`
     <h3>Rename page</h3>
-    <input type="text" id="renameTabInput" placeholder="Tab label" value="${page.tab}">
-    <input type="text" id="renameTitleInput" placeholder="Page title" value="${page.title}">
+    <input type="text" id="renameTabInput" placeholder="Tab label" value="${escapeHtml(page.tab)}">
+    <input type="text" id="renameTitleInput" placeholder="Page title" value="${escapeHtml(page.title)}">
     <div class="modal-actions">
       <button class="modal-btn cancel" data-modal-close>Cancel</button>
       <button class="modal-btn confirm" id="savePageRenameBtn">Save</button>
@@ -958,7 +1083,7 @@ function requestDeletePage(index) {
   const page = nb.pages[index];
   openModal(`
     <h3>Delete this page?</h3>
-    <p>"${page.title}" will be removed from this notebook. This can't be undone.</p>
+    <p>"${escapeHtml(page.title)}" will be removed from this notebook. This can't be undone.</p>
     <div class="modal-actions">
       <button class="modal-btn cancel" data-modal-close>Cancel</button>
       <button class="modal-btn danger" id="confirmDeletePageBtn">Delete</button>
@@ -1053,20 +1178,26 @@ function wirePagesListModal() {
 function jitterAngle(id, tone) {
   const base = { pink: -2, outline: 1.5, yellow: -1, white: 0 }[tone] || 0;
   let hash = 0;
-  for (let i = 0; i < id.length; i += 1) hash = (hash * 31 + id.charCodeAt(i)) | 0;
+  const safeId = String(id || '');
+  for (let i = 0; i < safeId.length; i += 1) hash = (hash * 31 + safeId.charCodeAt(i)) | 0;
   const wobble = ((Math.abs(hash) % 100) / 100) * 3 - 1.5;
   return (base + wobble).toFixed(2);
 }
 
 function stickyHTML(sticky) {
-  const resizeHandle = `<span class="resize-handle" data-resize="${sticky.id}"></span>`;
-  const widthStyle = sticky.width ? `--w:${sticky.width}px; ` : '';
-  const rotStyle = sticky.image ? '' : `--rot:${jitterAngle(sticky.id, sticky.tone)}deg; `;
+  const id = escapeHtml(sticky.id);
+  const tone = safeTone(sticky.tone);
+  const x = safePercent(sticky.x, 50);
+  const y = safePercent(sticky.y, 50);
+  const width = Number(sticky.width);
+  const resizeHandle = `<span class="resize-handle" data-resize="${id}"></span>`;
+  const widthStyle = Number.isFinite(width) ? `--w:${Math.max(110, Math.min(460, width))}px; ` : '';
+  const rotStyle = sticky.image ? '' : `--rot:${jitterAngle(sticky.id, tone)}deg; `;
 
   if (sticky.image) {
     return `
-      <article class="sticky sticky-image sticky-loose" data-id="${sticky.id}" style="${widthStyle}--x:${sticky.x}%; --y:${sticky.y}%">
-        <img src="${sticky.image}" alt="${sticky.title || 'Image note'}" draggable="false">
+      <article class="sticky sticky-image sticky-loose" data-id="${id}" style="${widthStyle}--x:${x}%; --y:${y}%">
+        <img src="${safeImageSource(sticky.image)}" alt="${escapeHtml(sticky.title || 'Image note')}" draggable="false">
         ${resizeHandle}
       </article>
     `;
@@ -1074,19 +1205,19 @@ function stickyHTML(sticky) {
 
   if (sticky.checklist) {
     return `
-      <article class="sticky sticky-${sticky.tone} sticky-loose" data-id="${sticky.id}" style="${widthStyle}${rotStyle}--x:${sticky.x}%; --y:${sticky.y}%">
-        <p class="sticky-title" contenteditable="true" data-sticky-title="${sticky.id}">${sticky.title}</p>
+      <article class="sticky sticky-${tone} sticky-loose" data-id="${id}" style="${widthStyle}${rotStyle}--x:${x}%; --y:${y}%">
+        <p class="sticky-title" contenteditable="true" data-sticky-title="${id}">${escapeHtml(sticky.title)}</p>
         <ul class="checklist">
           ${sticky.checklist.map((text, i) => `
             <li>
               <label>
-                <input type="checkbox" data-check="${sticky.id}-${i}">
-                <span contenteditable="true" data-check-text="${sticky.id}:${i}">${text}</span>
+                <input type="checkbox" data-check="${id}-${i}">
+                <span contenteditable="true" data-check-text="${id}:${i}">${escapeHtml(text)}</span>
               </label>
-              <button class="mini-btn" data-del-check="${sticky.id}:${i}" aria-label="Remove item">×</button>
+              <button class="mini-btn" data-del-check="${id}:${i}" aria-label="Remove item">×</button>
             </li>`).join('')}
         </ul>
-        <button class="add-item-btn" data-add-check="${sticky.id}">+ Add item</button>
+        <button class="add-item-btn" data-add-check="${id}">+ Add item</button>
         ${resizeHandle}
       </article>
     `;
@@ -1094,24 +1225,24 @@ function stickyHTML(sticky) {
 
   if (sticky.list) {
     return `
-      <article class="sticky sticky-${sticky.tone} sticky-loose" data-id="${sticky.id}" style="${widthStyle}${rotStyle}--x:${sticky.x}%; --y:${sticky.y}%">
-        <p class="sticky-title" contenteditable="true" data-sticky-title="${sticky.id}">${sticky.title}</p>
+      <article class="sticky sticky-${tone} sticky-loose" data-id="${id}" style="${widthStyle}${rotStyle}--x:${x}%; --y:${y}%">
+        <p class="sticky-title" contenteditable="true" data-sticky-title="${id}">${escapeHtml(sticky.title)}</p>
         <ul>
           ${sticky.list.map((text, i) => `
             <li>
-              <span contenteditable="true" data-list-item="${sticky.id}:${i}">${text}</span>
-              <button class="mini-btn" data-del-list-item="${sticky.id}:${i}" aria-label="Remove item">×</button>
+              <span contenteditable="true" data-list-item="${id}:${i}">${escapeHtml(text)}</span>
+              <button class="mini-btn" data-del-list-item="${id}:${i}" aria-label="Remove item">×</button>
             </li>`).join('')}
         </ul>
-        <button class="add-item-btn" data-add-list-item="${sticky.id}">+ Add item</button>
+        <button class="add-item-btn" data-add-list-item="${id}">+ Add item</button>
         ${resizeHandle}
       </article>
     `;
   }
   return `
-    <article class="sticky sticky-${sticky.tone} sticky-loose" data-id="${sticky.id}" style="${widthStyle}${rotStyle}--x:${sticky.x}%; --y:${sticky.y}%">
-      <p class="sticky-title" contenteditable="true" data-sticky-title="${sticky.id}">${sticky.title}</p>
-      <p contenteditable="true" data-sticky-text="${sticky.id}">${sticky.text}</p>
+    <article class="sticky sticky-${tone} sticky-loose" data-id="${id}" style="${widthStyle}${rotStyle}--x:${x}%; --y:${y}%">
+      <p class="sticky-title" contenteditable="true" data-sticky-title="${id}">${escapeHtml(sticky.title)}</p>
+      <p contenteditable="true" data-sticky-text="${id}">${escapeHtml(sticky.text)}</p>
       ${resizeHandle}
     </article>
   `;
@@ -1122,13 +1253,13 @@ function blockHTML(block, index) {
     return `
       <div class="functions-block" data-block="${index}">
         <div class="block-head">
-          <p class="block-title-list" contenteditable="true" data-block-title="${index}">${block.title}</p>
+          <p class="block-title-list" contenteditable="true" data-block-title="${index}">${escapeHtml(block.title)}</p>
           <button class="mini-btn" data-del-block="${index}" aria-label="Remove block">×</button>
         </div>
         <ul>
           ${block.items.map((item, i) => `
             <li>
-              <span contenteditable="true" data-block-item="${index}:${i}">${item}</span>
+              <span contenteditable="true" data-block-item="${index}:${i}">${escapeHtml(item)}</span>
               <button class="mini-btn" data-del-item="${index}:${i}" aria-label="Remove item">×</button>
             </li>`).join('')}
         </ul>
@@ -1137,15 +1268,15 @@ function blockHTML(block, index) {
     `;
   }
   return `
-    <article class="sticky sticky-${block.tone}" data-block="${index}">
+    <article class="sticky sticky-${safeTone(block.tone)}" data-block="${index}">
       <div class="block-head">
-        <p class="sticky-title" contenteditable="true" data-block-title="${index}">${block.title}</p>
+        <p class="sticky-title" contenteditable="true" data-block-title="${index}">${escapeHtml(block.title)}</p>
         <button class="mini-btn" data-del-block="${index}" aria-label="Remove block">×</button>
       </div>
       <ul>
         ${block.items.map((item, i) => `
           <li>
-            <span contenteditable="true" data-block-item="${index}:${i}">${item}</span>
+            <span contenteditable="true" data-block-item="${index}:${i}">${escapeHtml(item)}</span>
             <button class="mini-btn" data-del-item="${index}:${i}" aria-label="Remove item">×</button>
           </li>`).join('')}
       </ul>
@@ -1196,10 +1327,10 @@ function renderPageContent() {
     <div class="page-content" id="pageContent">
       <div class="page-content-inner" id="pageContentInner">
         <div class="page-head">
-          <h2 contenteditable="true" data-page-title>${page.title}</h2>
-          <span class="page-date" contenteditable="true" data-page-date>${page.date}</span>
+          <h2 contenteditable="true" data-page-title>${escapeHtml(page.title)}</h2>
+          <span class="page-date" contenteditable="true" data-page-date>${escapeHtml(page.date)}</span>
         </div>
-        <p class="page-copy" contenteditable="true" data-page-copy>${page.copy}</p>
+        <p class="page-copy" contenteditable="true" data-page-copy>${safePageCopyHtml(page.copy)}</p>
         ${page.diagram ? cellDiagramHTML() : ''}
         <div class="page-row">
           ${(page.blocks || []).map((block, index) => blockHTML(block, index)).join('')}
@@ -1963,15 +2094,25 @@ async function transcribeOnlineVideoToNotes(url) {
       body: JSON.stringify({ url, language: (navigator.language || 'en').slice(0, 2) })
     });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || 'ONLINE_TRANSCRIPT_FAILED');
+    if (!response.ok) {
+      // A static host commonly returns an HTML 404 for /api. Give the user a
+      // setup message instead of pretending that the video has no captions.
+      const apiError = payload.error || (response.status === 404 ? 'VIDEO_API_UNAVAILABLE' : 'ONLINE_TRANSCRIPT_FAILED');
+      throw new Error(apiError);
+    }
     if (!payload.text || !payload.text.trim()) throw new Error('NO_CAPTIONS_FOUND');
     openVideoTranscriptReview(payload.title || 'Online lecture', payload.text);
   } catch (error) {
-    const message = error.message === 'UNSUPPORTED_VIDEO_HOST'
+    const errorCode = error && error.message;
+    const message = errorCode === 'UNSUPPORTED_VIDEO_HOST'
       ? 'This link is not supported yet. Paste a public YouTube lecture URL, or upload the video/audio file instead.'
-      : error.message === 'NO_CAPTIONS_FOUND'
+      : errorCode === 'NO_CAPTIONS_FOUND'
         ? 'No captions were available for this video. Download the recording and use Upload file to transcribe its audio.'
-        : 'The lecture transcript could not be retrieved. Check that the video is public and has captions, then try again.';
+        : errorCode === 'VIDEO_API_UNAVAILABLE' || errorCode === 'Failed to fetch'
+          ? 'The video-notes service is not running at this app address. Start the server, then open the app from http://localhost:8787 instead of opening index.html or a separate live-preview server.'
+          : errorCode === 'CAPTION_SERVICE_UNAVAILABLE'
+            ? 'The caption service is temporarily unavailable. Restart the app server after running npm install in the server folder, then try again.'
+            : 'The lecture transcript could not be retrieved. Confirm that the video is public, then try again.';
     openModal(`<h3>Couldn’t get lecture notes</h3><p>${escapeHtml(message)}</p><div class="modal-actions"><button class="modal-btn confirm" data-modal-close>OK</button></div>`);
   }
 }
@@ -2477,7 +2618,7 @@ function buildMindmapMarkup(nb) {
   const cx = W / 2, cy = H / 2;
 
   let svgLines = '';
-  let nodes = `<div class="mindmap-node mindmap-center" contenteditable="true" data-mind-center>${nb.mindmap.center}</div>`;
+  let nodes = `<div class="mindmap-node mindmap-center" contenteditable="true" data-mind-center>${escapeHtml(nb.mindmap.center)}</div>`;
   let count = 0;
 
   function bezierPath(x1, y1, x2, y2) {
@@ -2491,14 +2632,16 @@ function buildMindmapMarkup(nb) {
       count += 1;
       const path = prefix ? `${prefix}.${i}` : `${i}`;
       const nodeTone = depth === 0 ? MINDMAP_TONES[i % MINDMAP_TONES.length] : tone;
-      const nx = node.x / 100 * W;
-      const ny = node.y / 100 * H;
+      const x = safePercent(node.x, 50);
+      const y = safePercent(node.y, 50);
+      const nx = x / 100 * W;
+      const ny = y / 100 * H;
       const strokeW = depth === 0 ? 2 : 1.2;
       const dashArray = depth > 0 ? 'stroke-dasharray="5 4"' : '';
       svgLines += `<path d="${bezierPath(parentX, parentY, nx, ny)}" stroke="${nodeTone}" stroke-width="${strokeW}" fill="none" ${dashArray} stroke-linecap="round" opacity="${depth === 0 ? 0.7 : 0.45}"/>`;
       nodes += `
-        <div class="mindmap-node mindmap-branch depth-${Math.min(depth, 2)}" data-path="${path}" data-depth="${depth}" style="--x:${node.x}%; --y:${node.y}%; --tone:${nodeTone}; animation-delay:${Math.min(count * 0.04, 0.5)}s">
-          <span contenteditable="true" data-mind-label="${path}">${node.label}</span>
+        <div class="mindmap-node mindmap-branch depth-${Math.min(depth, 2)}" data-path="${path}" data-depth="${depth}" style="--x:${x}%; --y:${y}%; --tone:${nodeTone}; animation-delay:${Math.min(count * 0.04, 0.5)}s">
+          <span contenteditable="true" data-mind-label="${path}">${escapeHtml(node.label)}</span>
           <button class="mindmap-node-add" data-mind-add="${path}" aria-label="Add sub-bubble" title="Add sub-bubble">+</button>
           <button class="mindmap-node-delete" data-mind-del="${path}" aria-label="Remove bubble" title="Remove">×</button>
         </div>
@@ -2711,11 +2854,11 @@ function renderReview() {
   list.innerHTML = celebrate + filtered.map((item) => {
     const revealed = state.revealed.has(item.key);
     return `
-      <article class="review-card${item.mastered ? ' is-mastered' : ''}${revealed ? ' is-revealed' : ''}" data-key="${item.key}" style="--accent: var(--${nb.color})">
+      <article class="review-card${item.mastered ? ' is-mastered' : ''}${revealed ? ' is-revealed' : ''}" data-key="${escapeHtml(item.key)}" style="--accent: var(--${safeNotebookColor(nb.color)})">
         <span class="review-tag">${item.mastered ? 'Mastered' : 'Due'}</span>
-        <p class="review-q">${item.q}</p>
+        <p class="review-q">${escapeHtml(item.q)}</p>
         ${revealed ? `
-          <p class="review-a">${item.a}</p>
+          <p class="review-a">${escapeHtml(item.a)}</p>
           <div class="review-actions">
             <button class="review-btn review-again" data-key="${item.key}">Review again</button>
             <button class="review-btn review-got-it" data-key="${item.key}">Got it ✓</button>
@@ -3146,7 +3289,41 @@ function wireExportImport() {
 /* ---------- Import PDF / Word / TXT / MD as new pages ---------- */
 
 function escapeHtml(str) {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function safePageCopyHtml(value) {
+  const source = String(value ?? '');
+  if (!source.includes('<')) return escapeHtml(source);
+  const template = document.createElement('template');
+  template.innerHTML = source;
+  template.content.querySelectorAll('script, iframe, object, embed, style, link, img, svg').forEach((element) => element.remove());
+  template.content.querySelectorAll('*').forEach((element) => {
+    if (!['BR', 'STRONG', 'SPAN'].includes(element.tagName)) {
+      element.replaceWith(document.createTextNode(element.textContent || ''));
+      return;
+    }
+    [...element.attributes].forEach((attribute) => element.removeAttribute(attribute.name));
+  });
+  return template.innerHTML;
+}
+
+function safeNotebookColor(color) {
+  return NOTEBOOK_COLORS.some((entry) => entry.id === color) ? color : 'ideas';
+}
+
+function safeTone(tone) {
+  return ['pink', 'outline', 'yellow', 'white'].includes(tone) ? tone : 'white';
+}
+
+function safePercent(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(-10, Math.min(110, number)) : fallback;
+}
+
+function safeImageSource(value) {
+  const source = String(value || '');
+  return /^(?:data:image\/(?:png|jpe?g|gif|webp);base64,|blob:|https?:\/\/)/i.test(source) ? escapeHtml(source) : '';
 }
 
 function textToPageCopyHtml(text) {
@@ -4268,7 +4445,6 @@ function wireAutosave() {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) saveState();
   });
-  setInterval(saveState, 4000);
 }
 
 /* ---------- Account & cloud sync ---------- */
@@ -4301,12 +4477,14 @@ function notesDocRef() {
   return window.firestoreDb.collection('drift_notes').doc(user.uid);
 }
 
-/* Fire-and-forget push to Firestore whenever we save locally — Firestore
-   is the "account" copy, localStorage is the always-on fallback. */
-function pushToServer() {
-  const docRef = notesDocRef();
-  if (!docRef) return;
-  docRef.set({
+/* Debounce cloud writes separately from local persistence. The browser copy
+   saves immediately, while a burst of edits becomes one Firestore write. */
+let cloudSyncTimer = null;
+let cloudSyncInFlight = false;
+let cloudSyncQueued = false;
+
+function cloudPayload() {
+  return {
     notebooks,
     recents: state.recents,
     notebookId: state.notebookId,
@@ -4314,7 +4492,35 @@ function pushToServer() {
     drawings: state.drawings,
     review: state.review,
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-  }, { merge: true }).catch(() => { /* offline right now — will retry on next save */ });
+  };
+}
+
+async function flushCloudSync() {
+  if (cloudSyncInFlight) {
+    cloudSyncQueued = true;
+    return;
+  }
+  const docRef = notesDocRef();
+  if (!docRef) return;
+  cloudSyncInFlight = true;
+  try {
+    await docRef.set(cloudPayload(), { merge: true });
+  } catch (_) {
+    /* Firestore offline persistence will retry when supported; localStorage
+       remains the durable browser fallback in every case. */
+  } finally {
+    cloudSyncInFlight = false;
+    if (cloudSyncQueued) {
+      cloudSyncQueued = false;
+      flushCloudSync();
+    }
+  }
+}
+
+function pushToServer() {
+  if (!notesDocRef()) return;
+  clearTimeout(cloudSyncTimer);
+  cloudSyncTimer = setTimeout(flushCloudSync, 1200);
 }
 
 async function pullFromServer() {
