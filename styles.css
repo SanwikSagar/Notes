@@ -1335,6 +1335,7 @@ svg {
 .profile-details { display: grid; gap: 10px; margin-bottom: 20px; }
 .profile-details div { display: flex; justify-content: space-between; gap: 18px; padding: 11px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
 .profile-details span { color: var(--muted); }
+.profile-modal-head + .profile-details + .modal-actions .modal-btn.danger { color: #a33f35; border-color: rgba(163,63,53,.25); background: rgba(163,63,53,.06); }
 
 .lecture-btn {
   display: inline-flex;

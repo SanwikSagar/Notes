@@ -4675,8 +4675,19 @@ function openProfileModal() {
   const email = user?.email || 'Email unavailable';
   const provider = user?.providerData?.[0]?.providerId === 'google.com' ? 'Google' : 'Email and password';
   const initials = username.trim().split(/\s+/).slice(0, 2).map((part) => part.charAt(0)).join('').toUpperCase() || '?';
-  openModal(`<div class="profile-modal-head"><span class="profile-modal-avatar">${escapeHtml(initials)}</span><div><h3>${escapeHtml(username)}</h3><p>${escapeHtml(email)}</p></div></div><div class="profile-details"><div><span>Sign-in method</span><strong>${escapeHtml(provider)}</strong></div><div><span>Cloud sync</span><strong>Enabled</strong></div></div><div class="modal-actions"><button class="modal-btn cancel" data-modal-close>Close</button><button class="modal-btn confirm" id="profileSyncBtn">Sync now</button></div>`, {
+  openModal(`<div class="profile-modal-head"><span class="profile-modal-avatar">${escapeHtml(initials)}</span><div><h3>${escapeHtml(username)}</h3><p>${escapeHtml(email)}</p></div></div><div class="profile-details"><div><span>Sign-in method</span><strong>${escapeHtml(provider)}</strong></div><div><span>Cloud sync</span><strong>Enabled</strong></div></div><div class="modal-actions"><button class="modal-btn danger" id="profileSignOutBtn">Log out</button><button class="modal-btn cancel" data-modal-close>Close</button><button class="modal-btn confirm" id="profileSyncBtn">Sync now</button></div>`, {
     onOpen: (box) => {
+      box.querySelector('#profileSignOutBtn')?.addEventListener('click', async () => {
+        const button = box.querySelector('#profileSignOutBtn');
+        button.disabled = true;
+        try {
+          if (window.firebaseAuth) await window.firebaseAuth.signOut();
+          setAuth(null, null);
+          refreshAccountUI();
+          closeModal();
+          showAuthGate();
+        } finally { button.disabled = false; }
+      });
       box.querySelector('#profileSyncBtn')?.addEventListener('click', async () => {
         const button = box.querySelector('#profileSyncBtn');
         button.disabled = true;
