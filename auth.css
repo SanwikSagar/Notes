@@ -193,3 +193,6 @@
   color: var(--muted, #9a8a6f);
   text-align: center;
 }
+
+.auth-legal-links { margin: 18px 0 0; display: flex; justify-content: center; gap: 8px; color: var(--muted, #9a8a6f); font-size: 11px; }
+.auth-legal-links a { color: inherit; font-weight: 500; }
