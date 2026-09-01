@@ -1,5 +1,5 @@
 /*
-  Drift — behavior layer.
+  Panne — behavior layer.
   Multi-page notebooks with a real page-turn animation, draggable sticky
   notes, an actual drawing canvas, flashcards, a mind map, spaced review,
   and full notebook management — tuned for touch on mobile/tablet.
@@ -3207,7 +3207,7 @@ function wireExportImport() {
     const link = document.createElement('a');
     const stamp = payload.exportedAt.slice(0, 10);
     link.href = url;
-    link.download = `drift-notes-${stamp}.json`;
+    link.download = `panne-notes-${stamp}.json`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -3230,7 +3230,7 @@ function wireExportImport() {
       } catch (err) {
         openModal(`
           <h3>Couldn't read that file</h3>
-          <p>It doesn't look like a valid Drift export (.json).</p>
+          <p>It doesn't look like a valid Panne export (.json).</p>
           <div class="modal-actions">
             <button class="modal-btn confirm" data-modal-close>OK</button>
           </div>
@@ -3240,7 +3240,7 @@ function wireExportImport() {
       if (!data || typeof data !== 'object' || !data.notebooks) {
         openModal(`
           <h3>Couldn't read that file</h3>
-          <p>It doesn't look like a valid Drift export (.json).</p>
+          <p>It doesn't look like a valid Panne export (.json).</p>
           <div class="modal-actions">
             <button class="modal-btn confirm" data-modal-close>OK</button>
           </div>
@@ -3250,7 +3250,7 @@ function wireExportImport() {
 
       openModal(`
         <h3>Import notes?</h3>
-        <p>This replaces everything currently in Drift on this device with the ${Object.keys(data.notebooks).length} notebook${Object.keys(data.notebooks).length === 1 ? '' : 's'} from this file. This can't be undone.</p>
+        <p>This replaces everything currently in Panne on this device with the ${Object.keys(data.notebooks).length} notebook${Object.keys(data.notebooks).length === 1 ? '' : 's'} from this file. This can't be undone.</p>
         <div class="modal-actions">
           <button class="modal-btn cancel" data-modal-close>Cancel</button>
           <button class="modal-btn confirm" id="confirmImportBtn">Import</button>

@@ -1,5 +1,5 @@
 /*
-  In-page auth gate for Drift notes.
+  In-page auth gate for Panne notes.
   Uses Firebase Auth (Google + email/password). The backend uses the
   Firebase ID token for Firestore sync authorization.
 */

@@ -1,4 +1,4 @@
-# Creative Notes — launch checklist
+# Panne — launch checklist
 
 ## 1. Prepare your GitHub repository
 
