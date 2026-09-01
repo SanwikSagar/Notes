@@ -4051,6 +4051,10 @@ function renderDashboard() {
   if (recentNode) recentNode.innerHTML = recent.length ? recent.map(([id, nb]) => `<button class="dashboard-recent-item" data-dashboard-notebook="${escapeHtml(id)}"><span class="dot dot-${safeNotebookColor(nb.color)}"></span><span><strong>${escapeHtml(nb.label)}</strong><small>${(nb.pages || []).length} ${(nb.pages || []).length === 1 ? 'page' : 'pages'}</small></span><span class="dashboard-arrow">›</span></button>`).join('') : '<p class="dashboard-empty">Your recent notes will appear here.</p>';
   const notebookNode = document.querySelector('#dashboardNotebookList');
   if (notebookNode) notebookNode.innerHTML = entries.slice(0, 5).map(([id, nb]) => `<button class="dashboard-notebook-item" data-dashboard-notebook="${escapeHtml(id)}"><span class="dot dot-${safeNotebookColor(nb.color)}"></span><span>${escapeHtml(nb.label)}</span><small>${(nb.pages || []).length} pages</small></button>`).join('') || '<p class="dashboard-empty">Create your first notebook.</p>';
+  const ad = dashboard.querySelector('.adsbygoogle');
+  if (ad && !ad.dataset.panneLoaded && window.adsbygoogle) {
+    try { (window.adsbygoogle = window.adsbygoogle || []).push({}); ad.dataset.panneLoaded = 'true'; } catch (_) { /* AdSense may be unavailable during local development. */ }
+  }
   dashboard.querySelectorAll('[data-dashboard-notebook]').forEach((button) => button.addEventListener('click', () => {
     const id = button.dataset.dashboardNotebook;
     if (!notebooks[id]) return;

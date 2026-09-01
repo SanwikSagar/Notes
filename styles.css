@@ -1925,6 +1925,8 @@ svg {
 .dashboard-stat { padding: 18px 20px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.52); }
 .dashboard-stat strong { display: block; font-size: 25px; }
 .dashboard-stat span { color: var(--muted); font-size: 12px; }
+.panne-ad { min-height: 90px; margin: 18px 0; padding: 8px 12px; border: 1px solid rgba(230,216,189,.7); border-radius: 14px; background: rgba(255,255,255,.34); overflow: hidden; }
+.panne-ad > span { display: block; margin-bottom: 4px; color: var(--muted); font-size: 10px; text-align: right; }
 .dashboard-grid { display: grid; grid-template-columns: 1.25fr 1fr; gap: 18px; }
 .dashboard-card { min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: 20px; background: rgba(255,255,255,.58); }
 .dashboard-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
