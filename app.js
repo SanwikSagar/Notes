@@ -4750,6 +4750,11 @@ function wireAccountMenu() {
     showAuthGate();
   });
 
+  document.querySelector('#accountPlansBtn')?.addEventListener('click', () => {
+    menu.hidden = true;
+    window.location.href = 'plans.html';
+  });
+
   document.querySelector('#accountProfileIn')?.addEventListener('click', () => {
     menu.hidden = true;
     openProfileModal();
