@@ -10,7 +10,7 @@ const AUTH_USER_KEY = 'drift-auth-username';
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyASt9fkEIFe0fJyFV83iA9KJsROXzMsjJQ",
-  authDomain: "panne.app",
+  authDomain: "panne-notes.firebaseapp.com",
   projectId: "panne-notes",
   storageBucket: "panne-notes.firebasestorage.app",
   messagingSenderId: "700399831481",
@@ -23,6 +23,27 @@ const firebaseAvailable = Boolean(window.firebase && firebaseConfigured);
 let firebaseAuth = null;
 let firestoreDb = null;
 let googleProvider = null;
+
+function isAndroidWebView() {
+  return Boolean(window.AndroidBridge && typeof window.AndroidBridge.launchGoogleSignIn === 'function');
+}
+
+window.onGoogleSignInSuccess = async function (idToken) {
+  try {
+    if (!firebaseAuth || !idToken) throw new Error('Google did not return an ID token.');
+    await firebaseAuth.signInWithCredential(firebase.auth.GoogleAuthProvider.credential(idToken));
+  } catch (err) {
+    showError(mapFirebaseError(err));
+    const button = document.getElementById('googleSignInBtn');
+    if (button) { button.disabled = false; button.textContent = 'Continue with Google'; }
+  }
+};
+
+window.onGoogleSignInError = function (message) {
+  showError(message || 'Google sign-in was canceled or unavailable.');
+  const button = document.getElementById('googleSignInBtn');
+  if (button) { button.disabled = false; button.textContent = 'Continue with Google'; }
+};
 
 if (firebaseAvailable) {
   if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
@@ -106,6 +127,16 @@ function renderGoogleButton(containerId) {
     button.disabled = true;
     button.textContent = 'Opening Google…';
     try {
+      if (isAndroidWebView()) {
+        const webClientId = typeof window.AndroidBridge.getWebClientId === 'function'
+          ? window.AndroidBridge.getWebClientId()
+          : '';
+        if (!webClientId || webClientId.startsWith('REPLACE_WITH_')) {
+          throw new Error('Android Google sign-in is not configured. Add the Web OAuth client ID in the Android app.');
+        }
+        window.AndroidBridge.launchGoogleSignIn();
+        return;
+      }
       const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.matchMedia('(max-width: 600px)').matches;
       if (isMobile) {
         await firebaseAuth.signInWithRedirect(googleProvider);
