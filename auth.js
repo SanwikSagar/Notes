@@ -106,6 +106,8 @@ function mapFirebaseError(err) {
   if (code === 'auth/popup-closed-by-user') return 'Google sign-in was canceled.';
   if (code === 'auth/popup-blocked') return 'Your browser blocked the Google sign-in window. Allow pop-ups for this site and try again.';
   if (code === 'auth/unauthorized-domain') return 'This site is not authorized in Firebase. Add your current domain under Authentication → Settings → Authorized domains.';
+  if (code === 'auth/network-request-failed') return 'Google sign-in could not reach Firebase. Check your connection and try again.';
+  if (code === 'auth/operation-not-supported-in-this-environment') return 'This browser cannot complete Google sign-in. Open Panne in a normal browser and try again.';
   if (code === 'auth/account-exists-with-different-credential') return 'An account already exists with this email. Sign in using the original method.';
   if (code === 'auth/too-many-requests') return 'Too many attempts. Try again in a moment.';
   if (code === 'auth/invalid-email') return 'Please enter a valid email address.';
@@ -137,12 +139,9 @@ function renderGoogleButton(containerId) {
         window.AndroidBridge.launchGoogleSignIn();
         return;
       }
-      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.matchMedia('(max-width: 600px)').matches;
-      if (isMobile) {
-        await firebaseAuth.signInWithRedirect(googleProvider);
-      } else {
-        await firebaseAuth.signInWithPopup(googleProvider);
-      }
+      // Redirect works reliably on desktop, mobile, and embedded browsers and
+      // avoids popup blockers silently leaving the button in a loading state.
+      await firebaseAuth.signInWithRedirect(googleProvider);
     } catch (err) {
       showError(mapFirebaseError(err));
       button.disabled = false;
@@ -187,7 +186,12 @@ function setupForm(formId, mode) {
   });
 }
 
-if (firebaseAvailable) firebaseAuth.onIdTokenChanged(async (user) => {
+if (firebaseAvailable) {
+  firebaseAuth.getRedirectResult().catch((err) => {
+    if (err && err.code !== 'auth/no-auth-event') showError(mapFirebaseError(err));
+  });
+
+  firebaseAuth.onIdTokenChanged(async (user) => {
   if (!user) {
     clearSession();
     showAuthGate();
@@ -207,7 +211,8 @@ if (firebaseAvailable) firebaseAuth.onIdTokenChanged(async (user) => {
     showAuthGate();
     window.dispatchEvent(new CustomEvent('drift-auth-changed', { detail: { signedIn: false } }));
   }
-});
+  });
+}
 
 document.addEventListener('DOMContentLoaded', () => {
   showAuthGate();
