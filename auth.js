@@ -29,6 +29,10 @@ if (firebaseAvailable) {
   firebaseAuth = firebase.auth();
   firestoreDb = firebase.firestore();
   googleProvider = new firebase.auth.GoogleAuthProvider();
+  // Always ask Google to display the account chooser. On phones and in
+  // embedded browsers, redirect is more reliable than a popup and lets the
+  // device's existing Google accounts be selected.
+  googleProvider.setCustomParameters({ prompt: 'select_account' });
   // Cloud Firestore keeps queued writes locally, so notes can sync after a
   // connection returns instead of silently losing an offline update.
   firestoreDb.enablePersistence({ synchronizeTabs: true }).catch(() => { /* Another tab or browser policy may own persistence. */ });
@@ -98,10 +102,20 @@ function renderGoogleButton(containerId) {
   container.innerHTML = '<button type="button" class="auth-submit auth-google-btn" id="googleSignInBtn">Continue with Google</button>';
   container.querySelector('#googleSignInBtn').addEventListener('click', async () => {
     document.getElementById('authError').hidden = true;
+    const button = container.querySelector('#googleSignInBtn');
+    button.disabled = true;
+    button.textContent = 'Opening Google…';
     try {
-      await firebaseAuth.signInWithPopup(googleProvider);
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.matchMedia('(max-width: 600px)').matches;
+      if (isMobile) {
+        await firebaseAuth.signInWithRedirect(googleProvider);
+      } else {
+        await firebaseAuth.signInWithPopup(googleProvider);
+      }
     } catch (err) {
       showError(mapFirebaseError(err));
+      button.disabled = false;
+      button.textContent = 'Continue with Google';
     }
   });
 }
