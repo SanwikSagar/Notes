@@ -24,27 +24,6 @@ let firebaseAuth = null;
 let firestoreDb = null;
 let googleProvider = null;
 
-function isAndroidWebView() {
-  return Boolean(window.AndroidBridge && typeof window.AndroidBridge.launchGoogleSignIn === 'function');
-}
-
-window.onGoogleSignInSuccess = async function (idToken) {
-  try {
-    if (!firebaseAuth || !idToken) throw new Error('Google did not return an ID token.');
-    await firebaseAuth.signInWithCredential(firebase.auth.GoogleAuthProvider.credential(idToken));
-  } catch (err) {
-    showError(mapFirebaseError(err));
-    const button = document.getElementById('googleSignInBtn');
-    if (button) { button.disabled = false; button.textContent = 'Continue with Google'; }
-  }
-};
-
-window.onGoogleSignInError = function (message) {
-  showError(message || 'Google sign-in was canceled or unavailable.');
-  const button = document.getElementById('googleSignInBtn');
-  if (button) { button.disabled = false; button.textContent = 'Continue with Google'; }
-};
-
 if (firebaseAvailable) {
   if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
   firebaseAuth = firebase.auth();
@@ -129,16 +108,6 @@ function renderGoogleButton(containerId) {
     button.disabled = true;
     button.textContent = 'Opening Google…';
     try {
-      if (isAndroidWebView()) {
-        const webClientId = typeof window.AndroidBridge.getWebClientId === 'function'
-          ? window.AndroidBridge.getWebClientId()
-          : '';
-        if (!webClientId || webClientId.startsWith('REPLACE_WITH_')) {
-          throw new Error('Android Google sign-in is not configured. Add the Web OAuth client ID in the Android app.');
-        }
-        window.AndroidBridge.launchGoogleSignIn();
-        return;
-      }
       // Redirect works reliably on desktop, mobile, and embedded browsers and
       // avoids popup blockers silently leaving the button in a loading state.
       await firebaseAuth.signInWithRedirect(googleProvider);
