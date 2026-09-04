@@ -12,7 +12,7 @@ const FIREBASE_CONFIG = {
   apiKey: "AIzaSyASt9fkEIFe0fJyFV83iA9KJsROXzMsjJQ",
   authDomain: "panne-notes.firebaseapp.com",
   projectId: "panne-notes",
-  storageBucket: "panne-notes.firebasestorage.app",
+  storageBucket: "panne.app",
   messagingSenderId: "700399831481",
   appId: "1:700399831481:web:4e0b208b2fdc455d75ce68",
   measurementId: "G-GSHV6S95LJ"
