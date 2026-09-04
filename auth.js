@@ -98,7 +98,7 @@ function showSetupMessage(message) {
 
 function mapFirebaseError(err) {
   const code = err && err.code;
-  if (!code) return 'Authentication failed.';
+  if (!code) return (err && err.message) || 'Authentication failed.';
   if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
     return 'Wrong email or password.';
   }
